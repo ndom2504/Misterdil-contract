@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background: #f5f6f8;
+  color: #12151a;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d5d8e0 transparent;
+}
+
+::selection {
+  background: #d9e4ff;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero-rise {
+    animation: misterdil-rise 0.9s ease both;
+  }
+}
+
+@keyframes misterdil-rise {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

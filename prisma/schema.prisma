@@ -1,0 +1,383 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// SQLite keeps the MVP runnable locally. The schema stays portable:
+// point DATABASE_URL at PostgreSQL and change the provider to "postgresql".
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String
+  passwordHash   String
+  phone          String?
+  jobTitle       String?
+  profileType    String?
+  onboarded      Boolean  @default(false)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  memberships    WorkspaceMember[]
+  documents      Document[]        @relation("DocumentCreator")
+  moderated      Document[]        @relation("DocumentModerator")
+  stakeholders   Stakeholder[]
+  comments       Comment[]
+  proposals      Proposal[]
+  approvals      Approval[]
+  notifications  Notification[]
+  activities     Activity[]
+  aiMessages     AiInteraction[]
+  uploads        Attachment[]
+  invitationsSent Invitation[] @relation("InvitedBy")
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  sector    String?
+  ownerId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+  workspaces Workspace[]
+}
+
+model Workspace {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  description    String   @default("")
+  sector         String?
+  domain         String?
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  members        WorkspaceMember[]
+  documents      Document[]
+  attachments    Attachment[]
+  activities     Activity[]
+  invitations    Invitation[]
+}
+
+model WorkspaceMember {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        String
+  createdAt   DateTime @default(now())
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+model Role {
+  id          String       @id
+  label       String
+  description String
+  permissions Permission[]
+}
+
+model Permission {
+  id     String @id @default(cuid())
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  key    String
+
+  @@unique([roleId, key])
+}
+
+model DocumentType {
+  id          String         @id
+  label       String
+  description String
+  blueprint   String
+  active      Boolean        @default(true)
+  position    Int            @default(0)
+  templates   FormTemplate[]
+  documents   Document[]
+}
+
+model Document {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  typeId          String
+  type            DocumentType @relation(fields: [typeId], references: [id])
+  title           String
+  sector          String   @default("")
+  domain          String   @default("")
+  description     String   @default("")
+  briefJson       String   @default("")
+  briefConfirmed  Boolean  @default(false)
+  wizardStep      Int      @default(1)
+  status          String   @default("DRAFT")
+  createdById     String
+  createdBy       User     @relation("DocumentCreator", fields: [createdById], references: [id])
+  moderatorId     String?
+  moderator       User?    @relation("DocumentModerator", fields: [moderatorId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  sections        DocumentSection[]
+  stakeholders    Stakeholder[]
+  responses       FormResponse[]
+  discussions     Discussion[]
+  proposals       Proposal[]
+  approvals       Approval[]
+  signatures      Signature[]
+  versions        DocumentVersion[]
+  activities      Activity[]
+  attachments     Attachment[]
+  aiMessages      AiInteraction[]
+
+  @@index([workspaceId])
+  @@index([status])
+}
+
+model DocumentSection {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  anchor     String
+  title      String
+  content    String   @default("")
+  status     String   @default("NOT_STARTED")
+  position   Int
+  updatedAt  DateTime @updatedAt
+  discussions Discussion[]
+  proposals  Proposal[]
+  approvals  Approval[]
+
+  @@index([documentId])
+}
+
+model FormTemplate {
+  id         String      @id @default(cuid())
+  typeId     String
+  type       DocumentType @relation(fields: [typeId], references: [id], onDelete: Cascade)
+  name       String
+  fields     FormField[]
+}
+
+model FormField {
+  id             String       @id @default(cuid())
+  templateId     String
+  template       FormTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  key            String
+  label          String
+  help           String       @default("")
+  fieldType      String
+  required       Boolean      @default(false)
+  position       Int
+  groupLabel     String
+  sectionAnchor  String
+  optionsJson    String       @default("")
+  sectors        String       @default("")
+  excludedSectors String      @default("")
+}
+
+model FormResponse {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  fieldKey   String
+  value      String   @default("")
+  updatedAt  DateTime @updatedAt
+
+  @@unique([documentId, fieldKey])
+}
+
+model Stakeholder {
+  id             String   @id @default(cuid())
+  documentId     String
+  document       Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?    @relation(fields: [userId], references: [id])
+  name           String
+  organization   String   @default("")
+  partyType      String
+  email          String   @default("")
+  phone          String   @default("")
+  representative String   @default("")
+  jobTitle       String   @default("")
+  address        String   @default("")
+  accessRole     String   @default("PARTICIPANT")
+  createdAt      DateTime @default(now())
+  signatures     Signature[]
+
+  @@index([documentId])
+  @@index([email])
+}
+
+model Discussion {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  sectionId  String?
+  section    DocumentSection? @relation(fields: [sectionId], references: [id])
+  title      String
+  status     String   @default("OPEN")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  comments   Comment[]
+
+  @@index([documentId])
+}
+
+model Comment {
+  id           String     @id @default(cuid())
+  discussionId String
+  discussion   Discussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  authorId     String?
+  author       User?      @relation(fields: [authorId], references: [id])
+  authorName   String
+  body         String
+  isAi         Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+}
+
+model Proposal {
+  id            String   @id @default(cuid())
+  documentId    String
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  sectionId     String
+  section       DocumentSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  authorId      String?
+  author        User?    @relation(fields: [authorId], references: [id])
+  authorName    String
+  isAi          Boolean  @default(false)
+  summary       String   @default("")
+  previousText  String
+  proposedText  String
+  status        String   @default("PENDING")
+  createdAt     DateTime @default(now())
+  resolvedAt    DateTime?
+
+  @@index([documentId])
+}
+
+model Approval {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  sectionId  String?
+  section    DocumentSection? @relation(fields: [sectionId], references: [id])
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  roleLabel  String   @default("")
+  status     String   @default("PENDING")
+  createdAt  DateTime @default(now())
+  decidedAt  DateTime?
+
+  @@index([documentId])
+}
+
+model Signature {
+  id             String    @id @default(cuid())
+  documentId     String
+  document       Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  stakeholderId  String
+  stakeholder    Stakeholder @relation(fields: [stakeholderId], references: [id], onDelete: Cascade)
+  status         String    @default("REQUIRED")
+  signerName     String    @default("")
+  signerEmail    String    @default("")
+  signedAt       DateTime?
+  method         String    @default("INTERNAL")
+  providerRef    String    @default("")
+  createdAt      DateTime  @default(now())
+
+  @@index([documentId])
+}
+
+model Attachment {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  documentId   String?
+  document     Document? @relation(fields: [documentId], references: [id])
+  name         String
+  mimeType     String
+  size         Int       @default(0)
+  storagePath  String    @default("")
+  uploadedById String
+  uploadedBy   User      @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime  @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String
+  title     String
+  body      String   @default("")
+  href      String   @default("")
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+}
+
+model Activity {
+  id          String    @id @default(cuid())
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id])
+  documentId  String?
+  document    Document? @relation(fields: [documentId], references: [id])
+  actorId     String?
+  actor       User?     @relation(fields: [actorId], references: [id])
+  actorName   String
+  kind        String
+  message     String
+  createdAt   DateTime  @default(now())
+
+  @@index([documentId])
+  @@index([workspaceId])
+}
+
+model DocumentVersion {
+  id            String   @id @default(cuid())
+  documentId    String
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  label         String
+  snapshot      String
+  createdByName String
+  createdAt     DateTime @default(now())
+}
+
+model AiInteraction {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentId String?
+  document   Document? @relation(fields: [documentId], references: [id])
+  role       String
+  content    String
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model Invitation {
+  id          String    @id @default(cuid())
+  email       String
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  role        String
+  documentId  String    @default("")
+  invitedById String
+  invitedBy   User      @relation("InvitedBy", fields: [invitedById], references: [id])
+  status      String    @default("PENDING")
+  createdAt   DateTime  @default(now())
+
+  @@index([email])
+}
