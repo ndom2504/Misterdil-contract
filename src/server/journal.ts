@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/server/db";
+import { sendPush } from "@/server/push";
 
 export function touchDocument(documentId: string) {
   revalidatePath("/accueil");
@@ -52,6 +53,7 @@ export async function notifyUser(input: {
       href: input.href ?? "",
     },
   });
+  await sendPush(input.userId, { title: input.title, body: input.body ?? "", href: input.href ?? "" });
 }
 
 export async function saveVersion(input: {

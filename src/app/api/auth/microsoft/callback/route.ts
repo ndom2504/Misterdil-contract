@@ -4,26 +4,47 @@ import { cleanNext, onboardingPath } from "@/lib/next-path";
 import { prisma } from "@/server/db";
 import { acceptInvitations } from "@/server/invitations";
 import { exchangeMicrosoftCode, saveMicrosoftAccount } from "@/server/microsoft";
+import { allowedAppRedirect } from "@/server/mobile";
 import { hashPassword } from "@/server/password";
 import { readSessionUserId } from "@/server/session";
-import { COOKIE, signSession } from "@/server/token";
+import { COOKIE, signMobileExchange, signSession } from "@/server/token";
 
 const ADMIN_CONSENT = /AADSTS(65001|90094|90095|900941)\b/;
+
+type Proof = { state?: string; verifier?: string; next?: string; app?: string; challenge?: string };
+
+function readProof(request: Request): Proof | null {
+  const raw = request.headers.get("cookie")?.split(";").map((part) => part.trim()).find((part) => part.startsWith("misterdil_ms_proof="))?.slice("misterdil_ms_proof=".length);
+  if (!raw) return null;
+  try {
+    return JSON.parse(decodeURIComponent(raw)) as Proof;
+  } catch {
+    return {};
+  }
+}
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
-  const proofCookie = request.headers.get("cookie")?.split(";").map((part) => part.trim()).find((part) => part.startsWith("misterdil_ms_proof="))?.slice("misterdil_ms_proof=".length);
-  const sessionUserId = await readSessionUserId();
+  const proof = readProof(request);
+  // A sign-in started from the mobile app returns to the app, whatever web session this browser holds.
+  const app = allowedAppRedirect(proof?.app ?? "");
+  const sessionUserId = app ? null : await readSessionUserId();
 
-  const redirectTo = (path: string) => {
-    const response = NextResponse.redirect(new URL(path, url.origin));
+  const clearProof = (response: NextResponse) => {
     response.cookies.set("misterdil_ms_proof", "", { path: "/", maxAge: 0 });
     return response;
   };
+  const toApp = (params: Record<string, string>) => {
+    const target = new URL(app);
+    for (const [key, value] of Object.entries(params)) target.searchParams.set(key, value);
+    return clearProof(NextResponse.redirect(target.toString()));
+  };
+  const redirectTo = (path: string) => clearProof(NextResponse.redirect(new URL(path, url.origin)));
   const fail = (reason: string, detail?: string) => {
     if (detail) console.error(`[microsoft] ${reason}: ${detail}`);
+    if (app) return toApp({ error: reason });
     return redirectTo(`${sessionUserId ? "/accueil" : "/connexion"}?microsoft=${reason}`);
   };
 
@@ -35,15 +56,8 @@ export async function GET(request: Request) {
     return fail("connexion-refusee", `${providerError} ${description}`);
   }
   if (!code || !state) return fail("connexion-interrompue", "code ou state absent");
-  if (!proofCookie) return fail("connexion-interrompue", "témoin de preuve absent (délai de 10 minutes dépassé ou autre domaine)");
-
-  let proof: { state?: string; verifier?: string; next?: string };
-  try {
-    proof = JSON.parse(decodeURIComponent(proofCookie)) as { state?: string; verifier?: string; next?: string };
-  } catch {
-    return fail("connexion-interrompue", "témoin de preuve illisible");
-  }
-  if (proof.state !== state || !proof.verifier) return fail("connexion-interrompue", "state différent");
+  if (!proof) return fail("connexion-interrompue", "témoin de preuve absent (délai de 10 minutes dépassé ou autre domaine)");
+  if (proof.state !== state || !proof.verifier) return fail("connexion-interrompue", "state différent ou témoin illisible");
 
   let token: Awaited<ReturnType<typeof exchangeMicrosoftCode>>;
   try {
@@ -74,6 +88,8 @@ export async function GET(request: Request) {
     }
 
     await saveMicrosoftAccount(userId, token);
+    if (app) return toApp({ code: await signMobileExchange(userId, proof.challenge ?? "") });
+
     const next = cleanNext(proof.next ?? "", "");
     const response = redirectTo(onboarded ? next || "/accueil?microsoft=ok" : onboardingPath(next));
     if (!sessionUserId) {

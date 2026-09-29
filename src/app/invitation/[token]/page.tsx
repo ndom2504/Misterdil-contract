@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FileText, ShieldCheck, Users } from "lucide-react";
+import { FileText, ShieldCheck, Smartphone, Users } from "lucide-react";
 import { MicrosoftButton } from "@/components/auth-forms";
 import { AuthStage } from "@/components/auth-stage";
 import { Logo } from "@/components/logo";
@@ -100,7 +100,11 @@ export default async function InvitationPage({ params }: { params: Promise<{ tok
           </div>
         )}
 
-        <div className="mt-6 flex gap-3 rounded-2xl bg-[#f4f8ff] p-4 text-sm text-[#3f4854]">
+        <a href={`misterdil://invitation/${encodeURIComponent(token)}`} className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-xl text-sm font-medium text-[#2f7cf6] hover:bg-[#f4f8ff]">
+          <Smartphone className="h-4 w-4" />Ouvrir dans l&apos;application Misterdil
+        </a>
+
+        <div className="mt-4 flex gap-3 rounded-2xl bg-[#f4f8ff] p-4 text-sm text-[#3f4854]">
           <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#2f7cf6]" />
           <p>Seules les personnes invitées accèdent à l&apos;entente. Vous verrez les modifications des autres parties en direct.</p>
         </div>

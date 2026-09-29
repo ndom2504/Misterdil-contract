@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { COOKIE, signSession, verifyToken } from "@/server/token";
 
 export async function createSession(userId: string, days = 14) {
@@ -18,7 +18,11 @@ export async function clearSession() {
   jar.delete(COOKIE);
 }
 
+// The mobile app sends the same signed token as a Bearer header instead of a cookie.
+// Browsers never attach it on their own, so it adds no cross-site request risk.
 export async function readSessionUserId() {
+  const authorization = (await headers()).get("authorization") ?? "";
+  if (authorization.startsWith("Bearer ")) return verifyToken(authorization.slice(7).trim());
   const jar = await cookies();
   const token = jar.get(COOKIE)?.value;
   if (!token) return null;

@@ -5,6 +5,7 @@ import { cleanNext, onboardingPath } from "@/lib/next-path";
 import { prisma } from "@/server/db";
 import { requireUser } from "@/server/current-user";
 import { acceptInvitations } from "@/server/invitations";
+import { saveOnboarding } from "@/server/onboarding";
 import { hashPassword, verifyPassword } from "@/server/password";
 import { clearSession, createSession } from "@/server/session";
 
@@ -55,44 +56,19 @@ export async function logout() {
 
 export async function completeOnboarding(_state: FormState, formData: FormData): Promise<FormState> {
   const user = await requireUser();
-  const kind = formData.get("kind") === "INDIVIDUAL" ? "INDIVIDUAL" : "ORGANIZATION";
-  const name = String(formData.get("name") ?? "").trim();
-  const organizationName = String(formData.get("organization") ?? "").trim();
-  const jobTitle = String(formData.get("jobTitle") ?? "").trim();
-  const sector = String(formData.get("sector") ?? "").trim();
-  const address = String(formData.get("address") ?? "").trim();
-  const phone = String(formData.get("phone") ?? "").trim();
-  const next = String(formData.get("suivant") ?? "");
-
-  if (name.length < 2) return { error: "Indiquez votre nom complet." };
-  if (kind === "ORGANIZATION" && organizationName.length < 2) {
-    return { error: "Indiquez le nom de votre organisation." };
-  }
-
-  const profile = {
-    name: kind === "INDIVIDUAL" ? name : organizationName,
-    kind,
-    sector: kind === "INDIVIDUAL" ? "" : sector,
-    address,
-    phone,
-  };
-  await prisma.$transaction(async (tx) => {
-    const organization = user.organization
-      ? await tx.organization.update({ where: { id: user.organization.id }, data: profile })
-      : await tx.organization.create({ data: { ...profile, ownerId: user.id } });
-    await tx.user.update({
-      where: { id: user.id },
-      data: {
-        name,
-        phone,
-        jobTitle: kind === "INDIVIDUAL" ? "" : jobTitle,
-        profileType: kind === "INDIVIDUAL" ? "Personne physique" : "Organisation",
-        organizationId: organization.id,
-        onboarded: true,
-      },
-    });
+  const field = (key: string) => String(formData.get(key) ?? "");
+  const saved = await saveOnboarding(user, {
+    kind: field("kind"),
+    name: field("name"),
+    organization: field("organization"),
+    jobTitle: field("jobTitle"),
+    sector: field("sector"),
+    address: field("address"),
+    phone: field("phone"),
   });
+  if (saved.error) return saved;
 
+  const next = field("suivant");
   if (next) redirect(cleanNext(next));
   const memberships = await prisma.workspaceMember.count({ where: { userId: user.id } });
   redirect(memberships ? "/accueil" : "/documents/nouveau");

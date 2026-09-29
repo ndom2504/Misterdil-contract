@@ -1,0 +1,88 @@
+import * as Notifications from 'expo-notifications';
+import { Stack, router } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
+import { useEffect, useRef } from 'react';
+import { Alert } from 'react-native';
+
+import { api, errorMessage } from '@/lib/api';
+import { AuthProvider, useAuth } from '@/lib/auth';
+import { appRoute } from '@/lib/format';
+import { registerPushToken } from '@/lib/push';
+import { colors } from '@/lib/theme';
+
+SplashScreen.preventAutoHideAsync();
+
+export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <StatusBar style="dark" />
+      <RootNavigator />
+    </AuthProvider>
+  );
+}
+
+function RootNavigator() {
+  const { status, me, pendingInvitation, setPendingInvitation } = useAuth();
+  const signedIn = status === 'signedIn';
+  const onboarded = Boolean(me?.user.onboarded);
+  const ready = signedIn && onboarded;
+  const lastResponse = Notifications.useLastNotificationResponse();
+  const handledResponse = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (status !== 'loading') SplashScreen.hideAsync();
+  }, [status]);
+
+  useEffect(() => {
+    if (signedIn) registerPushToken().catch(() => {});
+  }, [signedIn]);
+
+  useEffect(() => {
+    if (!ready || !lastResponse) return;
+    const id = lastResponse.notification.request.identifier;
+    if (handledResponse.current === id) return;
+    handledResponse.current = id;
+    const href = lastResponse.notification.request.content.data?.href;
+    if (typeof href === 'string') router.push(appRoute(href));
+  }, [ready, lastResponse]);
+
+  useEffect(() => {
+    if (!ready || !pendingInvitation) return;
+    const token = pendingInvitation;
+    setPendingInvitation(null);
+    api<{ ok: true; documentId: string }>(`/api/mobile/invitations/${encodeURIComponent(token)}`, { method: 'POST' })
+      .then((result) => {
+        if (result.documentId) router.push(`/documents/${result.documentId}`);
+      })
+      .catch((error) => Alert.alert('Invitation', errorMessage(error)));
+  }, [ready, pendingInvitation, setPendingInvitation]);
+
+  if (status === 'loading') return null;
+
+  return (
+    <Stack
+      screenOptions={{
+        headerTintColor: colors.brand,
+        headerTitleStyle: { color: colors.text },
+        headerBackButtonDisplayMode: 'minimal',
+        contentStyle: { backgroundColor: colors.background },
+      }}>
+      <Stack.Protected guard={!signedIn}>
+        <Stack.Screen name="connexion" options={{ headerShown: false }} />
+        <Stack.Screen name="inscription" options={{ title: 'Créer un compte' }} />
+      </Stack.Protected>
+      <Stack.Protected guard={signedIn && !onboarded}>
+        <Stack.Screen name="onboarding" options={{ title: 'Votre profil', headerBackVisible: false }} />
+      </Stack.Protected>
+      <Stack.Protected guard={ready}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="documents/[id]/index" options={{ title: 'Entente' }} />
+        <Stack.Screen name="documents/[id]/[sectionId]" options={{ title: 'Section' }} />
+        <Stack.Screen name="nouveau" options={{ title: 'Nouvelle entente', presentation: 'modal' }} />
+      </Stack.Protected>
+      <Stack.Screen name="invitation/[token]" options={{ title: 'Invitation' }} />
+      <Stack.Screen name="auth" options={{ headerShown: false }} />
+    </Stack>
+  );
+}
