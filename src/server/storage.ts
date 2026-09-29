@@ -5,8 +5,11 @@ import { get, put } from "@vercel/blob";
 const BLOB_PREFIX = "blob:";
 const LOCAL_DIRECTORY = path.join(process.cwd(), "data", "uploads");
 
+// On Vercel, a linked store only exposes BLOB_STORE_ID; the SDK then authenticates with
+// the runtime OIDC token. Locally, that token only exists after `vercel env pull`.
 export function blobConfigured() {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID);
+  if (process.env.BLOB_READ_WRITE_TOKEN) return true;
+  return Boolean(process.env.BLOB_STORE_ID && (process.env.VERCEL || process.env.VERCEL_OIDC_TOKEN));
 }
 
 export async function storeFile(extension: string, bytes: Buffer, contentType: string) {
