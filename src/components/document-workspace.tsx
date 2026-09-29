@@ -3,27 +3,47 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { ChevronDown, Clock, FileText, Mail, MessageSquare, PenLine, Printer, Search, Users, Video } from "lucide-react";
 import { addComment, approveParticipation, createProposal, proposeFormulation, requestValidation, resolveProposal, saveParties, sendForSignature, setDiscussionStatus, setModerator, signDocument } from "@/server/actions/collaboration";
 import { setSectionStatus, updateSectionContent } from "@/server/actions/documents";
 import { AssistantPanel } from "@/components/assistant-panel";
 import { ProgressBar } from "@/components/progress-bar";
 import { StatusBadge } from "@/components/status-badge";
 import { Button, Card, Field, controlClass } from "@/components/ui";
-import { partyLabel } from "@/lib/domain";
-import { formatDateTime } from "@/lib/format";
+import { partyLabel, sectionStatusLabel } from "@/lib/domain";
+import { formatDateTime, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type { getDocumentView } from "@/server/queries";
 
 type View = NonNullable<Awaited<ReturnType<typeof getDocumentView>>>;
 const TABS = [
-  ["document", "Document"],
-  ["discussions", "Discussions"],
-  ["cahier", "Cahier des charges"],
-  ["participants", "Participants"],
-  ["historique", "Historique"],
-  ["validation", "Validation"],
-  ["signature", "Signature"],
+  ["document", "Document", FileText],
+  ["discussions", "Discussions", MessageSquare],
+  ["cahier", "Cahier des charges", FileText],
+  ["participants", "Participants", Users],
+  ["historique", "Historique", Clock],
+  ["validation", "Validation", PenLine],
+  ["signature", "Signature", PenLine],
 ] as const;
+
+function statusTone(status: string) {
+  if (status === "VALIDATED" || status === "LOCKED") return "bg-[#e7f8ee] text-[#14804a]";
+  if (status === "IN_DISCUSSION" || status === "CHANGES_REQUESTED") return "bg-[#fff4e5] text-[#c56a10]";
+  return "bg-[#f3f4f6] text-[#6b7280]";
+}
+
+function HighlightedText({ text, marks }: { text: string; marks: string[] }) {
+  const needle = marks.map((mark) => mark.trim()).find((mark) => mark.length > 2 && text.includes(mark));
+  if (!needle) return text;
+  const index = text.indexOf(needle);
+  return (
+    <>
+      {text.slice(0, index)}
+      <mark className="rounded bg-[#fff4c2] px-0.5">{needle}</mark>
+      {text.slice(index + needle.length)}
+    </>
+  );
+}
 
 export function DocumentWorkspace({
   view,
@@ -47,6 +67,10 @@ export function DocumentWorkspace({
   const [proposalText, setProposalText] = useState("");
   const [comment, setComment] = useState<Record<string, string>>({});
   const [versionId, setVersionId] = useState(view.versions[0]?.id ?? "");
+  const [activeId, setActiveId] = useState(view.sections.find((section) => section.status === "IN_DISCUSSION")?.id ?? view.sections[0]?.id ?? "");
+  const [sectionQuery, setSectionQuery] = useState("");
+  const [zoom, setZoom] = useState("100");
+  const [more, setMore] = useState(false);
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -73,124 +97,261 @@ export function DocumentWorkspace({
   }
 
   const version = view.versions.find((item) => item.id === versionId) ?? view.versions[0];
+  const active = view.sections.find((section) => section.id === activeId) ?? view.sections[0];
+  const activeIndex = Math.max(0, view.sections.findIndex((section) => section.id === active?.id));
+  const content = active ? (drafts[active.id] ?? active.content) : "";
+  const proposals = active ? view.proposals.filter((item) => item.sectionId === active.id && item.status === "PENDING") : [];
+  const sectionTalks = active ? view.discussions.filter((item) => item.sectionId === active.id) : [];
+  const nextSection = view.sections.find((section) => section.status === "IN_DISCUSSION" || section.status === "CHANGES_REQUESTED") ?? view.sections.find((section) => section.status !== "VALIDATED" && section.status !== "LOCKED");
+  const organizations = [...new Set(view.stakeholders.map((party) => party.organization).filter(Boolean))].slice(0, 2);
+  const openSections = view.sections.filter((section) => section.status !== "VALIDATED" && section.status !== "LOCKED");
+  const filteredSections = view.sections.filter((section) => section.title.toLowerCase().includes(sectionQuery.trim().toLowerCase()));
 
   return (
-    <div className="mx-auto max-w-7xl">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-sm text-[#5e6875]"><Link href={`/espaces/${view.workspaceId}`} className="hover:text-[#1e4ed8]">{view.workspaceName}</Link> · {view.typeLabel}</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">{view.title}</h1>
-          <p className="mt-2 text-sm font-medium">Modérateur : {view.moderatorName}</p>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#e8f0ff] text-[#2f6fed]">
+            <FileText className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs text-[#8b939e]">
+              <Link href="/documents" className="hover:text-[#2f6fed]">Mes documents</Link>
+              <span> · </span>
+              <Link href={`/espaces/${view.workspaceId}`} className="hover:text-[#2f6fed]">{view.workspaceName}</Link>
+            </p>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[#10233f]">{view.title}</h1>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-[#eef3f8] px-2.5 py-1 text-xs text-[#3f4854]">{view.typeLabel}</span>
+              <Link href={`/espaces/${view.workspaceId}`} className="rounded-full bg-[#eef3f8] px-2.5 py-1 text-xs text-[#3f4854]">{view.workspaceName}</Link>
+              {organizations.map((name) => <span key={name} className="rounded-full bg-[#eef3f8] px-2.5 py-1 text-xs text-[#3f4854]">{name}</span>)}
+              <StatusBadge status={view.status} />
+            </div>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <a className="rounded-lg border border-[#e6e8ee] bg-white px-3 py-2 text-sm" href={`/api/documents/${view.id}/export?format=pdf`}>Exporter PDF</a>
-          <a className="rounded-lg border border-[#e6e8ee] bg-white px-3 py-2 text-sm" href={`/api/documents/${view.id}/export?format=docx`}>Exporter Word</a>
-          <a className="rounded-lg border border-[#e6e8ee] bg-white px-3 py-2 text-sm" href={`/documents/${view.id}/imprimer`} target="_blank">Imprimer</a>
+        <div className="flex flex-wrap items-center gap-2">
+          <a className="inline-flex h-10 items-center rounded-full border border-[#e6eef8] bg-white px-3 text-sm text-[#243040]" href={`/api/documents/${view.id}/export?format=pdf`}>Exporter PDF</a>
+          <a className="inline-flex h-10 items-center rounded-full border border-[#e6eef8] bg-white px-3 text-sm text-[#243040]" href={`/api/documents/${view.id}/export?format=docx`}>Exporter Word</a>
+          <a className="inline-flex h-10 items-center gap-1 rounded-full border border-[#e6eef8] bg-white px-3 text-sm text-[#243040]" href={`/documents/${view.id}/imprimer`} target="_blank"><Printer className="h-4 w-4" />Imprimer</a>
+          <div className="relative">
+            <button type="button" onClick={() => setMore((value) => !value)} className="inline-flex h-10 items-center gap-1 rounded-full border border-[#e6eef8] bg-white px-3 text-sm text-[#243040]">
+              Plus <ChevronDown className="h-4 w-4" />
+            </button>
+            {more && active ? (
+              <div className="absolute right-0 z-10 mt-2 w-56 rounded-2xl border border-[#e6eef8] bg-white p-2 text-sm shadow-lg">
+                {view.access.canEdit && active.status !== "LOCKED" ? <button type="button" className="block w-full rounded-xl px-3 py-2 text-left hover:bg-[#f4f7fb]" onClick={() => { setEditing(active.id); setDrafts((current) => ({ ...current, [active.id]: active.content })); setMore(false); }}>Modifier la section</button> : null}
+                {view.access.canValidate && active.status !== "VALIDATED" ? <button type="button" className="block w-full rounded-xl px-3 py-2 text-left hover:bg-[#f4f7fb]" onClick={() => { setMore(false); run(() => setSectionStatus(view.id, active.id, "VALIDATED")); }}>Valider la section</button> : null}
+                {view.access.canLock && active.status !== "LOCKED" ? <button type="button" className="block w-full rounded-xl px-3 py-2 text-left hover:bg-[#f4f7fb]" onClick={() => { setMore(false); run(() => setSectionStatus(view.id, active.id, "LOCKED")); }}>Verrouiller</button> : null}
+                {view.access.canLock && active.status === "LOCKED" ? <button type="button" className="block w-full rounded-xl px-3 py-2 text-left hover:bg-[#f4f7fb]" onClick={() => { setMore(false); run(() => setSectionStatus(view.id, active.id, "IN_PREPARATION")); }}>Déverrouiller</button> : null}
+                {view.access.canPropose && active.status !== "LOCKED" ? <button type="button" className="block w-full rounded-xl px-3 py-2 text-left hover:bg-[#f4f7fb]" onClick={() => { setProposalFor(active.id); setMore(false); }}>Proposer une formulation</button> : null}
+                {view.access.isModerator ? <button type="button" className="block w-full rounded-xl px-3 py-2 text-left hover:bg-[#f4f7fb]" onClick={() => { setMore(false); run(() => proposeFormulation(view.id, active.id)); }}>Formulation IA</button> : null}
+                <button type="button" className="block w-full rounded-xl px-3 py-2 text-left hover:bg-[#f4f7fb]" onClick={() => { setTab("participants"); setMore(false); }}>Partager</button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
-      <Card className="mb-4 grid gap-4 p-4 md:grid-cols-[1fr_220px] md:items-center">
+      <section className="grid gap-4 rounded-2xl border border-[#e6eef8] bg-white p-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center">
         <div>
           <ProgressBar value={view.progress.percent} />
           <p className="mt-2 text-sm text-[#5e6875]">{view.progress.validated} / {view.progress.total} sections validées · {view.progress.discussion} en discussion · {view.progress.todo} à compléter</p>
+          {saved ? <p className="mt-1 text-xs text-[#14804a]">{saved}</p> : null}
         </div>
-        <div className="flex items-center justify-between gap-3 md:justify-end">
-          <StatusBadge status={view.status} />
-          {saved ? <span className="text-xs text-[#5e6875]">{saved}</span> : null}
-        </div>
-      </Card>
+        {nextSection ? (
+          <button type="button" onClick={() => { setTab("document"); setActiveId(nextSection.id); }} className="rounded-2xl border border-[#e6eef8] px-4 py-3 text-left hover:border-[#c9d7fb]">
+            <p className="text-xs text-[#8b939e]">Prochaine étape</p>
+            <p className="mt-1 flex items-center gap-2 text-sm font-medium text-[#10233f]"><Clock className="h-4 w-4 text-[#2f6fed]" />Réviser la section {view.sections.findIndex((section) => section.id === nextSection.id) + 1}</p>
+            <p className="text-xs text-[#6b7280]">{nextSection.title}</p>
+          </button>
+        ) : null}
+      </section>
 
-      <div className="mb-4 flex gap-1 overflow-x-auto">
-        {TABS.map(([id, label]) => (
-          <button key={id} type="button" onClick={() => setTab(id)} className={cn("rounded-lg px-3 py-2 text-sm whitespace-nowrap", tab === id ? "bg-white font-medium text-[#1e4ed8] shadow-sm" : "text-[#5e6875] hover:bg-white")}>{label}</button>
-        ))}
+      <div className="flex gap-1 overflow-x-auto rounded-2xl border border-[#e6eef8] bg-white px-2 py-2 shadow-sm">
+        {TABS.map(([id, label, Icon]) => {
+          const count = id === "discussions" ? view.discussions.length : id === "participants" ? view.stakeholders.length : 0;
+          return (
+            <button key={id} type="button" onClick={() => setTab(id)} className={cn("inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm whitespace-nowrap", tab === id ? "bg-[#e8f0ff] font-medium text-[#2f6fed]" : "text-[#5e6875] hover:bg-[#f4f7fb]")}>
+              <Icon className="h-4 w-4" />
+              {label}
+              {count > 0 ? <span className="rounded-full bg-white px-1.5 text-xs">{count}</span> : null}
+            </button>
+          );
+        })}
       </div>
-      {error ? <p className="mb-3 text-sm text-[#9f2d2d]">{error}</p> : null}
+      {error ? <p className="text-sm text-[#9f2d2d]">{error}</p> : null}
 
-      {tab === "document" ? (
-        <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_300px]">
-          <Card className="h-fit p-3">
-            <p className="px-2 py-2 text-xs font-medium uppercase tracking-wide text-[#8b939e]">Sommaire</p>
-            {view.sections.map((section, index) => (
-              <a key={section.id} href={`#${section.id}`} className="flex items-center justify-between gap-2 rounded-lg px-2 py-2 text-sm hover:bg-[#f6f7f9]">
-                <span>{index + 1}. {section.title}</span>
-                <StatusBadge status={section.status} kind="section" />
-              </a>
-            ))}
-          </Card>
-          <div className="space-y-4">
-            {view.sections.map((section, index) => {
-              const content = drafts[section.id] ?? section.content;
-              const proposals = view.proposals.filter((item) => item.sectionId === section.id && item.status === "PENDING");
-              return (
-                <Card key={section.id} id={section.id} className="p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="text-lg font-semibold">{index + 1}. {section.title}</h2>
-                    <StatusBadge status={section.status} kind="section" />
+      {tab === "document" && active ? (
+        <div className="space-y-4">
+          <div className="grid items-start gap-4 xl:grid-cols-[240px_minmax(0,1fr)_300px]">
+            <section className="rounded-2xl border border-[#e6eef8] bg-white p-3 shadow-sm">
+              <div className="mb-2 flex items-center justify-between px-1">
+                <p className="text-sm font-semibold text-[#10233f]">Sections du document</p>
+              </div>
+              <div className="relative mb-2">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8b939e]" />
+                <input value={sectionQuery} onChange={(event) => setSectionQuery(event.target.value)} placeholder="Rechercher" className="h-9 w-full rounded-xl border border-[#e6eef8] pl-8 pr-3 text-sm outline-none focus:border-[#2f6fed]" />
+              </div>
+              <div className="space-y-1">
+                {filteredSections.map((section) => {
+                  const index = view.sections.findIndex((item) => item.id === section.id);
+                  const selected = section.id === active.id;
+                  return (
+                    <button key={section.id} type="button" onClick={() => setActiveId(section.id)} className={cn("flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-sm", selected ? "bg-[#e8f0ff]" : "hover:bg-[#f4f7fb]")}>
+                      <span className="w-5 shrink-0 text-xs text-[#8b939e]">{index + 1}</span>
+                      <span className="min-w-0 flex-1 truncate text-[#10233f]">{section.title}</span>
+                      <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", statusTone(section.status))}>{sectionStatusLabel(section.status)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-[#e6eef8] bg-white shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#eef2f7] px-4 py-3">
+                <select className="h-9 rounded-lg border border-[#e6eef8] bg-white px-2 text-sm" value={version?.id ?? ""} onChange={(event) => setVersionId(event.target.value)}>
+                  <option value={view.versions[0]?.id ?? ""}>Version actuelle</option>
+                  {view.versions.slice(1).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                </select>
+                <select className="h-9 rounded-lg border border-[#e6eef8] bg-white px-2 text-sm" value={zoom} onChange={(event) => setZoom(event.target.value)} aria-label="Taille du texte">
+                  <option value="90">90 %</option>
+                  <option value="100">100 %</option>
+                  <option value="110">110 %</option>
+                  <option value="125">125 %</option>
+                </select>
+              </div>
+              <div className="px-5 py-5" style={{ fontSize: `${zoom}%` }}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-semibold text-[#10233f]">{activeIndex + 1}. {active.title}</h2>
+                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", statusTone(active.status))}>{sectionStatusLabel(active.status)}</span>
+                </div>
+                {version && version.id !== view.versions[0]?.id ? (
+                  <div className="mt-4 whitespace-pre-wrap text-sm leading-7 text-[#243040]">
+                    {version.sections.find((section) => section.title === active.title)?.content ?? "Cette version ne contient pas cette section."}
                   </div>
-                  {editing === section.id && view.access.canEdit && section.status !== "LOCKED" ? (
-                    <textarea className={`${controlClass} mt-4 min-h-40`} value={content} onChange={(event) => {
-                      const value = event.target.value;
-                      draftsRef.current = { ...draftsRef.current, [section.id]: value };
-                      setDirty(true);
-                      setDrafts(draftsRef.current);
-                    }} onBlur={() => {
-                      const latest = draftsRef.current[section.id] ?? content;
-                      run(() => updateSectionContent(view.id, section.id, latest, true));
-                    }} />
-                  ) : (
-                    <div className="mt-4 whitespace-pre-wrap text-sm leading-7 text-[#243040]">{content}</div>
-                  )}
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {view.access.canEdit && section.status !== "LOCKED" ? <Button variant="secondary" type="button" onClick={() => { setEditing(editing === section.id ? null : section.id); setDrafts((current) => ({ ...current, [section.id]: section.content })); }}>{editing === section.id ? "Fermer" : "Modifier"}</Button> : null}
-                    {view.access.canValidate && section.status !== "VALIDATED" ? <Button variant="secondary" type="button" onClick={() => run(() => setSectionStatus(view.id, section.id, "VALIDATED"))}>Valider</Button> : null}
-                    {view.access.canLock && section.status !== "LOCKED" ? <Button variant="ghost" type="button" onClick={() => run(() => setSectionStatus(view.id, section.id, "LOCKED"))}>Verrouiller</Button> : null}
-                    {view.access.canLock && section.status === "LOCKED" ? <Button variant="ghost" type="button" onClick={() => run(() => setSectionStatus(view.id, section.id, "IN_PREPARATION"))}>Déverrouiller</Button> : null}
-                    {view.access.canPropose && section.status !== "LOCKED" ? <Button variant="ghost" type="button" onClick={() => setProposalFor(section.id)}>Proposer</Button> : null}
-                    {view.access.canComment ? <Button variant="ghost" type="button" onClick={() => setTab("discussions")}>Discuter</Button> : null}
-                    {view.access.isModerator ? <Button variant="ghost" type="button" onClick={() => run(() => proposeFormulation(view.id, section.id))}>Formulation IA</Button> : null}
+                ) : editing === active.id && view.access.canEdit && active.status !== "LOCKED" ? (
+                  <textarea id={`editor-${active.id}`} className={`${controlClass} mt-4 min-h-56`} value={content} onChange={(event) => {
+                    const value = event.target.value;
+                    draftsRef.current = { ...draftsRef.current, [active.id]: value };
+                    setDirty(true);
+                    setDrafts(draftsRef.current);
+                  }} />
+                ) : (
+                  <div className="mt-4 whitespace-pre-wrap text-sm leading-7 text-[#243040]">
+                    <HighlightedText text={content} marks={proposals.map((item) => item.previousText)} />
                   </div>
-                  {proposalFor === section.id ? (
-                    <div className="mt-4 space-y-2">
-                      <textarea className={`${controlClass} min-h-24`} value={proposalText} onChange={(event) => setProposalText(event.target.value)} placeholder="Nouvelle formulation" />
-                      <Button type="button" onClick={() => run(async () => {
-                        const result = await createProposal(view.id, section.id, content.slice(0, 500), proposalText);
-                        if (result.ok) { setProposalFor(null); setProposalText(""); }
-                        return result;
-                      })}>Envoyer la proposition</Button>
-                    </div>
-                  ) : null}
-                  {proposals.map((proposal) => (
-                    <div key={proposal.id} className="mt-4 rounded-lg border border-[#e6e8ee] bg-[#fafbfc] p-4 text-sm">
-                      <p className="font-medium">{proposal.summary}</p>
-                      <p className="mt-2 text-[#8b939e]">Ancienne version</p>
-                      <p>{proposal.previousText}</p>
-                      <p className="mt-2 text-[#8b939e]">Nouvelle version</p>
-                      <p>{proposal.proposedText}</p>
-                      {view.access.canValidate ? (
-                        <div className="mt-3 space-y-2">
-                          <textarea className={`${controlClass} min-h-20`} defaultValue={proposal.proposedText} id={`edit-${proposal.id}`} />
-                          <div className="flex flex-wrap gap-2">
-                            <Button type="button" onClick={() => run(() => resolveProposal(view.id, proposal.id, "ACCEPTED"))}>Accepter</Button>
-                            <Button variant="secondary" type="button" onClick={() => run(() => resolveProposal(view.id, proposal.id, "REJECTED"))}>Refuser</Button>
-                            <Button variant="secondary" type="button" onClick={() => {
-                              const value = (document.getElementById(`edit-${proposal.id}`) as HTMLTextAreaElement | null)?.value ?? proposal.proposedText;
-                              run(() => resolveProposal(view.id, proposal.id, "MODIFIED", value));
-                            }}>Modifier</Button>
-                            <Button variant="ghost" type="button" onClick={() => run(() => resolveProposal(view.id, proposal.id, "DISCUSS"))}>Discuter</Button>
-                          </div>
+                )}
+                {proposalFor === active.id ? (
+                  <div className="mt-4 space-y-2">
+                    <textarea className={`${controlClass} min-h-24`} value={proposalText} onChange={(event) => setProposalText(event.target.value)} placeholder="Nouvelle formulation" />
+                    <Button type="button" onClick={() => run(async () => {
+                      const result = await createProposal(view.id, active.id, content.slice(0, 500), proposalText);
+                      if (result.ok) { setProposalFor(null); setProposalText(""); }
+                      return result;
+                    })}>Envoyer la proposition</Button>
+                  </div>
+                ) : null}
+                {proposals.map((proposal) => (
+                  <div key={proposal.id} className="mt-4 rounded-xl border border-[#f3e2b0] bg-[#fff9ea] p-4 text-sm">
+                    <p className="font-medium">{proposal.summary}</p>
+                    <p className="mt-2 text-[#8b939e]">Ancienne version</p>
+                    <p>{proposal.previousText}</p>
+                    <p className="mt-2 text-[#8b939e]">Nouvelle version</p>
+                    <p>{proposal.proposedText}</p>
+                    {view.access.canValidate ? (
+                      <div className="mt-3 space-y-2">
+                        <textarea className={`${controlClass} min-h-20`} defaultValue={proposal.proposedText} id={`edit-${proposal.id}`} />
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" onClick={() => run(() => resolveProposal(view.id, proposal.id, "ACCEPTED"))}>Accepter</Button>
+                          <Button variant="secondary" type="button" onClick={() => run(() => resolveProposal(view.id, proposal.id, "REJECTED"))}>Refuser</Button>
+                          <Button variant="secondary" type="button" onClick={() => {
+                            const value = (document.getElementById(`edit-${proposal.id}`) as HTMLTextAreaElement | null)?.value ?? proposal.proposedText;
+                            run(() => resolveProposal(view.id, proposal.id, "MODIFIED", value));
+                          }}>Modifier</Button>
+                          <Button variant="ghost" type="button" onClick={() => run(() => resolveProposal(view.id, proposal.id, "DISCUSS"))}>Discuter</Button>
                         </div>
-                      ) : null}
-                    </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-end gap-2 border-t border-[#eef2f7] px-4 py-3">
+                {view.access.canEdit && active.status !== "LOCKED" && editing !== active.id ? <Button variant="secondary" type="button" onClick={() => { setEditing(active.id); setDrafts((current) => ({ ...current, [active.id]: active.content })); }}>Modifier</Button> : null}
+                {view.access.canEdit && active.status !== "LOCKED" ? (
+                  <button type="button" className="inline-flex h-9 items-center rounded-full bg-[#2f6fed] px-4 text-sm font-medium text-white" onClick={() => {
+                    const latest = draftsRef.current[active.id] ?? content;
+                    run(() => updateSectionContent(view.id, active.id, latest, true));
+                  }}>Enregistrer</button>
+                ) : null}
+              </div>
+            </section>
+
+            <aside className="space-y-4">
+              <section className="rounded-2xl border border-[#d7e6ff] bg-[#f3f8ff] p-4 shadow-sm">
+                <p className="text-sm font-semibold text-[#10233f]">Assistant Misterdil</p>
+                <p className="mt-1 text-xs leading-5 text-[#3f4854]">{active.status === "IN_DISCUSSION" ? "Cette section est en discussion. Le modérateur décide." : "L'assistant propose. Le modérateur décide."}</p>
+                <div className="mt-3 flex flex-col gap-2">
+                  <button type="button" className="h-9 rounded-full bg-[#2f6fed] text-sm font-medium text-white" onClick={() => setTab("discussions")}>Résumer les discussions</button>
+                  {view.access.isModerator ? <button type="button" className="h-9 rounded-full border border-[#c9d7fb] bg-white text-sm font-medium text-[#2f6fed]" onClick={() => run(() => proposeFormulation(view.id, active.id))}>Proposer une formulation</button> : null}
+                </div>
+                <div className="mt-3 rounded-xl bg-white p-3 text-[#12151a]">
+                  <AssistantPanel documentId={view.id} initial={history} compact />
+                </div>
+              </section>
+              <section className="rounded-2xl border border-[#e6eef8] bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-[#10233f]">Discussions de la section</h2>
+                  <button type="button" className="text-xs text-[#2f6fed]" onClick={() => setTab("discussions")}>Voir tout</button>
+                </div>
+                <ul className="space-y-3">
+                  {sectionTalks.length === 0 ? <li className="text-sm text-[#6b7280]">Aucune discussion sur cette section.</li> : null}
+                  {sectionTalks.flatMap((discussion) => discussion.comments).slice(0, 4).map((item) => (
+                    <li key={item.id} className="text-sm">
+                      <p className="font-medium text-[#10233f]">{item.authorName}</p>
+                      <p className="text-xs text-[#8b939e]">{formatRelative(item.createdAt)}</p>
+                      <p className="mt-1 leading-5 text-[#3f4854]">{item.body}</p>
+                    </li>
                   ))}
-                </Card>
-              );
-            })}
+                </ul>
+                {view.access.canComment ? (
+                  <div className="mt-3 flex gap-2">
+                    <input className={controlClass} value={comment[active.id] ?? ""} onChange={(event) => setComment((current) => ({ ...current, [active.id]: event.target.value }))} placeholder="Ajouter un commentaire" />
+                    <Button type="button" onClick={() => run(() => addComment(view.id, { sectionId: active.id, body: comment[active.id] ?? "" }))}>Envoyer</Button>
+                  </div>
+                ) : null}
+              </section>
+            </aside>
           </div>
-          <Card className="h-fit p-4">
-            <p className="mb-3 text-sm font-semibold">Assistant Misterdil</p>
-            <AssistantPanel documentId={view.id} initial={history} compact />
-          </Card>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <article className="rounded-2xl border border-[#e6eef8] bg-white p-4 shadow-sm">
+              <p className="text-sm font-semibold text-[#10233f]">Documents liés</p>
+              {view.linkedSpec ? <Link href={`/documents/${view.linkedSpec.id}`} className="mt-3 block text-sm text-[#2f6fed]">{view.linkedSpec.title}</Link> : <p className="mt-3 text-sm text-[#6b7280]">Aucun cahier des charges lié.</p>}
+              {view.attachments.map((file) => <a key={file.id} className="mt-2 block text-sm text-[#2f6fed]" href={`/api/attachments/${file.id}`}>{file.name}</a>)}
+            </article>
+            <article className="rounded-2xl border border-[#e6eef8] bg-white p-4 shadow-sm">
+              <p className="flex items-center gap-2 text-sm font-semibold text-[#10233f]"><Video className="h-4 w-4 text-[#2f6fed]" />Réunions associées</p>
+              <p className="mt-3 text-sm leading-5 text-[#6b7280]">Les réunions Teams de ce document apparaîtront ici après la connexion Microsoft.</p>
+            </article>
+            <article className="rounded-2xl border border-[#e6eef8] bg-white p-4 shadow-sm">
+              <p className="flex items-center gap-2 text-sm font-semibold text-[#10233f]"><Mail className="h-4 w-4 text-[#2f6fed]" />Emails associés</p>
+              <p className="mt-3 text-sm leading-5 text-[#6b7280]">Les courriels Outlook liés à ce document apparaîtront ici après la connexion Microsoft.</p>
+            </article>
+            <article className="rounded-2xl border border-[#e6eef8] bg-white p-4 shadow-sm">
+              <p className="text-sm font-semibold text-[#10233f]">Tâches liées</p>
+              <ul className="mt-3 space-y-2">
+                {openSections.length === 0 ? <li className="text-sm text-[#6b7280]">Toutes les sections sont validées.</li> : null}
+                {openSections.slice(0, 3).map((section) => (
+                  <li key={section.id}>
+                    <button type="button" onClick={() => setActiveId(section.id)} className="flex w-full items-center justify-between gap-2 text-left text-sm text-[#243040]">
+                      <span>Réviser {section.title}</span>
+                      {section.status === "IN_DISCUSSION" ? <span className="rounded-full bg-[#fff1f0] px-2 py-0.5 text-[10px] font-medium text-[#c2410c]">Urgent</span> : null}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          </div>
         </div>
       ) : null}
 

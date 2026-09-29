@@ -35,6 +35,18 @@ model User {
   aiMessages     AiInteraction[]
   uploads        Attachment[]
   invitationsSent Invitation[] @relation("InvitedBy")
+  microsoft      MicrosoftAccount?
+}
+
+model MicrosoftAccount {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email        String
+  accessToken  String
+  refreshToken String   @default("")
+  expiresAt    DateTime
+  updatedAt    DateTime @updatedAt
 }
 
 model Organization {

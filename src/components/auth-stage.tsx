@@ -26,12 +26,8 @@ export function AuthStage({ children }: { children: React.ReactNode }) {
       <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(7,17,28,0.35),transparent_22%,rgba(7,17,28,0.55)_100%)]" />
 
       <header className="relative z-20 mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-5 lg:px-8">
-        <Link href="/" className="flex items-center gap-3">
-          <Logo tone="light" wordmark={false} />
-          <span className="leading-tight">
-            <span className="block text-[15px] font-semibold">Misterdil</span>
-            <span className="block text-[10px] text-white/70">Collaboration smart</span>
-          </span>
+        <Link href="/" className="flex">
+          <Logo tone="light" stack />
         </Link>
         <nav className="hidden items-center gap-6 text-sm text-white/80 md:flex">
           {links.map((item) => (

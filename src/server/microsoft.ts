@@ -1,0 +1,330 @@
+import { createHash, randomBytes } from "crypto";
+import type { MailWindow, MeetingWindow } from "@/lib/microsoft-desk";
+import { prisma } from "@/server/db";
+
+const SCOPES = ["openid", "profile", "email", "offline_access", "User.Read", "Mail.Read", "Mail.ReadWrite", "Mail.Send", "Calendars.Read"];
+
+export type MicrosoftBoard = {
+  configured: boolean;
+  connected: boolean;
+  email: string;
+  error: string;
+  mail: MailWindow[];
+  meetings: MeetingWindow[];
+};
+
+type TokenResponse = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  error_description?: string;
+};
+
+function configured() {
+  return Boolean(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET);
+}
+
+export function microsoftRedirectUri(origin: string) {
+  return process.env.MICROSOFT_REDIRECT_URI || `${origin}/api/auth/microsoft/callback`;
+}
+
+export function microsoftAuthorizeUrl(origin: string, state: string, verifier: string) {
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  const url = new URL("https://login.microsoftonline.com/common/oauth2/v2.0/authorize");
+  url.searchParams.set("client_id", process.env.MICROSOFT_CLIENT_ID ?? "");
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("redirect_uri", microsoftRedirectUri(origin));
+  url.searchParams.set("response_mode", "query");
+  url.searchParams.set("scope", SCOPES.join(" "));
+  url.searchParams.set("state", state);
+  url.searchParams.set("code_challenge", challenge);
+  url.searchParams.set("code_challenge_method", "S256");
+  url.searchParams.set("prompt", "select_account");
+  return url.toString();
+}
+
+export function createMicrosoftProof() {
+  return {
+    state: randomBytes(16).toString("base64url"),
+    verifier: randomBytes(32).toString("base64url"),
+  };
+}
+
+async function tokenRequest(body: URLSearchParams) {
+  const response = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  const payload = (await response.json()) as TokenResponse;
+  if (!response.ok || !payload.access_token) {
+    throw new Error(payload.error_description || "Jeton Microsoft refusé.");
+  }
+  return payload;
+}
+
+export async function exchangeMicrosoftCode(origin: string, code: string, verifier: string) {
+  const body = new URLSearchParams({
+    client_id: process.env.MICROSOFT_CLIENT_ID ?? "",
+    client_secret: process.env.MICROSOFT_CLIENT_SECRET ?? "",
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: microsoftRedirectUri(origin),
+    code_verifier: verifier,
+  });
+  return tokenRequest(body);
+}
+
+async function graph<T>(token: string, path: string) {
+  const response = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Prefer: 'outlook.body-content-type="text", outlook.timezone="America/Toronto"',
+    },
+  });
+  if (!response.ok) {
+    const error = new Error(response.status === 403 ? "consent" : "graph") as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
+  return (await response.json()) as T;
+}
+
+function plain(body: { contentType?: string; content?: string } | undefined) {
+  const content = body?.content ?? "";
+  if (body?.contentType === "html") {
+    return content
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  return content.trim();
+}
+
+function stamp(value?: string) {
+  if (!value) return new Date().toISOString();
+  const cleaned = value.replace(/(\.\d{3})\d+/, "$1");
+  const date = new Date(cleaned.endsWith("Z") || cleaned.includes("+") ? cleaned : `${cleaned}Z`);
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+}
+
+const MONTHS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+
+function zoneDay(date: Date) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+
+function whenLabel(value: string) {
+  const [date, time = ""] = value.split("T");
+  const [, month, day] = date.split("-");
+  return `${Number(day)} ${MONTHS[Number(month) - 1] ?? ""} · ${time.slice(0, 5)}`;
+}
+
+function clockLabel(value: string) {
+  const [date, time = ""] = value.split("T");
+  if (date === zoneDay(new Date())) return time.slice(0, 5);
+  const [, month, day] = date.split("-");
+  return `${Number(day)} ${MONTHS[Number(month) - 1] ?? ""}`;
+}
+
+function meetingParts(value: string) {
+  const [date, time = ""] = value.split("T");
+  const [, month, day] = date.split("-");
+  const hm = time.slice(0, 5);
+  const today = zoneDay(new Date());
+  const tomorrow = zoneDay(new Date(Date.now() + 24 * 60 * 60 * 1000));
+  const dayLabel = date === today ? "Aujourd'hui" : date === tomorrow ? "Demain" : `${Number(day)} ${MONTHS[Number(month) - 1] ?? ""}`;
+  const now = new Intl.DateTimeFormat("en-GB", { timeZone: "America/Toronto", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date());
+  const past = date < today || (date === today && hm < now);
+  return { day: dayLabel, time: hm, past };
+}
+
+type AccountRow = { id: string; email: string; accessToken: string; refreshToken: string; expiresAt: string | Date };
+
+async function findAccount(userId: string) {
+  const rows = await prisma.$queryRaw<AccountRow[]>`SELECT id, email, accessToken, refreshToken, expiresAt FROM MicrosoftAccount WHERE userId = ${userId} LIMIT 1`;
+  const row = rows[0];
+  if (!row) return null;
+  return { ...row, expiresAt: new Date(row.expiresAt) };
+}
+
+async function freshAccessToken(account: { id: string; accessToken: string; refreshToken: string; expiresAt: Date }) {
+  if (account.expiresAt.getTime() > Date.now() + 60_000) return account.accessToken;
+  if (!account.refreshToken) throw new Error("refresh");
+  const payload = await tokenRequest(new URLSearchParams({
+    client_id: process.env.MICROSOFT_CLIENT_ID ?? "",
+    client_secret: process.env.MICROSOFT_CLIENT_SECRET ?? "",
+    grant_type: "refresh_token",
+    refresh_token: account.refreshToken,
+    scope: SCOPES.join(" "),
+  }));
+  const expiresAt = new Date(Date.now() + (payload.expires_in ?? 3600) * 1000);
+  const accessToken = payload.access_token ?? account.accessToken;
+  const refreshToken = payload.refresh_token || account.refreshToken;
+  await prisma.$executeRaw`UPDATE MicrosoftAccount SET accessToken = ${accessToken}, refreshToken = ${refreshToken}, expiresAt = ${expiresAt}, updatedAt = ${new Date()} WHERE id = ${account.id}`;
+  return accessToken;
+}
+
+export async function saveMicrosoftAccount(userId: string, token: TokenResponse) {
+  const profile = await graph<{ mail?: string; userPrincipalName?: string }>(token.access_token ?? "", "/me?$select=mail,userPrincipalName");
+  const email = profile.mail || profile.userPrincipalName || "";
+  const expiresAt = new Date(Date.now() + (token.expires_in ?? 3600) * 1000);
+  const accessToken = token.access_token ?? "";
+  const existing = await findAccount(userId);
+  if (existing) {
+    const refreshToken = token.refresh_token || existing.refreshToken;
+    await prisma.$executeRaw`UPDATE MicrosoftAccount SET email = ${email}, accessToken = ${accessToken}, refreshToken = ${refreshToken}, expiresAt = ${expiresAt}, updatedAt = ${new Date()} WHERE id = ${existing.id}`;
+  } else {
+    const id = randomBytes(12).toString("hex");
+    const refreshToken = token.refresh_token ?? "";
+    const now = new Date();
+    await prisma.$executeRaw`INSERT INTO MicrosoftAccount (id, userId, email, accessToken, refreshToken, expiresAt, updatedAt) VALUES (${id}, ${userId}, ${email}, ${accessToken}, ${refreshToken}, ${expiresAt}, ${now})`;
+  }
+  return email;
+}
+
+export async function getMicrosoftBoard(userId: string): Promise<MicrosoftBoard> {
+  const empty: MicrosoftBoard = { configured: configured(), connected: false, email: "", error: "", mail: [], meetings: [] };
+  if (!empty.configured) return empty;
+  const account = await findAccount(userId).catch(() => null);
+  if (!account) return empty;
+  try {
+    const token = await freshAccessToken(account);
+    const start = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const end = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+    const [mail, calendar] = await Promise.all([
+      graph<{ value: { id: string; subject?: string; importance?: string; categories?: string[]; from?: { emailAddress?: { name?: string; address?: string } }; receivedDateTime?: string; bodyPreview?: string; isRead?: boolean; body?: { contentType?: string; content?: string } }[] }>(
+        token,
+        "/me/messages?$top=12&$select=id,subject,from,receivedDateTime,bodyPreview,isRead,body,importance,categories&$orderby=receivedDateTime desc",
+      ),
+      graph<{ value: { id: string; subject?: string; isOnlineMeeting?: boolean; start?: { dateTime?: string }; organizer?: { emailAddress?: { name?: string } }; attendees?: unknown[]; onlineMeeting?: { joinUrl?: string } }[] }>(
+        token,
+        `/me/calendarView?startDateTime=${start.toISOString()}&endDateTime=${end.toISOString()}&$select=subject,start,isOnlineMeeting,onlineMeeting,organizer,attendees&$orderby=start/dateTime&$top=20`,
+      ),
+    ]);
+    return {
+      configured: true,
+      connected: true,
+      email: account.email,
+      error: "",
+      mail: mail.value.map((item) => ({
+        id: item.id,
+        subject: item.subject || "(Sans objet)",
+        from: item.from?.emailAddress?.name || item.from?.emailAddress?.address || "Expéditeur inconnu",
+        receivedAt: item.receivedDateTime ? whenLabel(item.receivedDateTime) : "",
+        preview: item.bodyPreview ?? "",
+        body: plain(item.body) || item.bodyPreview || "",
+        unread: item.isRead === false,
+        important: item.importance === "high",
+        category: item.categories?.[0] ?? "",
+        clock: item.receivedDateTime ? clockLabel(item.receivedDateTime) : "",
+        at: stamp(item.receivedDateTime),
+      })),
+      meetings: calendar.value
+        .filter((item) => item.isOnlineMeeting)
+        .slice(0, 12)
+        .map((item) => {
+          const parts = item.start?.dateTime ? meetingParts(item.start.dateTime) : { day: "", time: "", past: false };
+          return {
+            id: item.id,
+            subject: item.subject || "Réunion Teams",
+            when: item.start?.dateTime ? whenLabel(item.start.dateTime) : "",
+            day: parts.day,
+            time: parts.time,
+            organizer: item.organizer?.emailAddress?.name || "",
+            attendees: item.attendees?.length ?? 0,
+            joinUrl: item.onlineMeeting?.joinUrl || "",
+            past: parts.past,
+            at: stamp(item.start?.dateTime),
+          };
+        }),
+    };
+  } catch (error) {
+    const status = (error as { status?: number }).status;
+    return {
+      configured: true,
+      connected: true,
+      email: account.email,
+      error: status === 403
+        ? "Un administrateur Microsoft doit accepter l'accès aux courriels et au calendrier."
+        : "La connexion Microsoft a expiré. Reconnectez le compte.",
+      mail: [],
+      meetings: [],
+    };
+  }
+}
+
+async function graphWrite(token: string, path: string, method: string, body?: unknown) {
+  const response = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!response.ok) {
+    const error = new Error("graph") as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
+}
+
+export async function mailAction(userId: string, messageId: string, action: "read" | "archive" | "reply", comment = "") {
+  const account = await findAccount(userId).catch(() => null);
+  if (!account) return { ok: false as const, error: "Connectez Microsoft." };
+  try {
+    const token = await freshAccessToken(account);
+    const id = encodeURIComponent(messageId);
+    if (action === "read") {
+      await graphWrite(token, `/me/messages/${id}`, "PATCH", { isRead: true });
+    } else if (action === "reply") {
+      const text = comment.trim();
+      if (text.length < 2) return { ok: false as const, error: "Écrivez la réponse." };
+      await graphWrite(token, `/me/messages/${id}/reply`, "POST", { comment: text });
+    } else {
+      const folder = await graph<{ id: string }>(token, "/me/mailFolders/archive");
+      await graphWrite(token, `/me/messages/${id}/move`, "POST", { destinationId: folder.id });
+    }
+    return { ok: true as const };
+  } catch (error) {
+    const status = (error as { status?: number }).status;
+    return {
+      ok: false as const,
+      error: status === 403
+        ? "Reconnectez Microsoft pour autoriser la réponse, la lecture et l'archivage."
+        : "L'action Outlook n'a pas abouti.",
+    };
+  }
+}
+
+export async function microsoftAlerts(userId: string) {
+  try {
+    const board = await getMicrosoftBoard(userId);
+    if (!board.connected) return [];
+    const mail = board.mail.slice(0, 4).map((item) => ({
+      id: `mail-${item.id}`,
+      kind: "outlook" as const,
+      title: `Outlook · ${item.subject}`,
+      body: `${item.from} · ${item.preview}`,
+      href: `/accueil?message=${encodeURIComponent(item.id)}`,
+      read: !item.unread,
+      createdAt: item.at,
+    }));
+    const meetings = board.meetings.slice(0, 3).map((item) => ({
+      id: `meet-${item.id}`,
+      kind: "teams" as const,
+      title: `Teams · ${item.subject}`,
+      body: `${item.when}${item.organizer ? ` · ${item.organizer}` : ""}`,
+      href: `/accueil?reunion=${encodeURIComponent(item.id)}`,
+      read: true,
+      createdAt: item.at,
+    }));
+    return [...mail, ...meetings];
+  } catch {
+    return [];
+  }
+}

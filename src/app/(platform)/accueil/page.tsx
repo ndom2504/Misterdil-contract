@@ -3,8 +3,10 @@ import Link from "next/link";
 import { Calendar, CheckCircle2, FileText, MessageSquare, PenLine, Sparkles } from "lucide-react";
 import { AssistantPanel } from "@/components/assistant-panel";
 import { DocumentTable } from "@/components/document-table";
+import { MicrosoftWindows } from "@/components/microsoft-windows";
 import { ProgressBar } from "@/components/progress-bar";
 import { requireUser } from "@/server/current-user";
+import { getMicrosoftBoard } from "@/server/microsoft";
 import { getDashboard, listWorkspaces, type DocumentSummary } from "@/server/queries";
 
 export const metadata = { title: "Accueil" };
@@ -51,9 +53,10 @@ function tasksFor(documents: DocumentSummary[]) {
     }));
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ microsoft?: string; message?: string; reunion?: string }> }) {
   const user = await requireUser();
-  const [data, workspaces] = await Promise.all([getDashboard(user), listWorkspaces(user)]);
+  const { microsoft, message, reunion } = await searchParams;
+  const [data, workspaces, desk] = await Promise.all([getDashboard(user), listWorkspaces(user), getMicrosoftBoard(user.id)]);
   const tasks = tasksFor(data.documents);
   const today = new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
@@ -75,6 +78,19 @@ export default async function DashboardPage() {
             </div>
           </div>
         </div>
+
+        <MicrosoftWindows
+          mail={desk.mail}
+          meetings={desk.meetings}
+          connected={desk.connected}
+          configured={desk.configured}
+          email={desk.email}
+          error={desk.error}
+          notice={microsoft}
+          initialMailId={message}
+          initialMeetingId={reunion}
+          documentTitles={data.documents.map((item) => item.title)}
+        />
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {kpis.map((item) => (

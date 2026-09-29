@@ -31,6 +31,8 @@ export type DocumentSummary = {
   moderatorName: string;
   participants: number;
   progress: ProgressStats;
+  description: string;
+  owned: boolean;
 };
 
 export async function listDocuments(user: SessionUser): Promise<DocumentSummary[]> {
@@ -82,6 +84,8 @@ export async function listDocuments(user: SessionUser): Promise<DocumentSummary[
         moderatorName: document.moderator?.name ?? "Non désigné",
         participants: document.stakeholders.length,
         progress: progressFromSections(document.sections),
+        description: document.description,
+        owned: document.moderatorId === user.id || document.createdById === user.id,
       });
     }
   }
@@ -426,40 +430,58 @@ export async function getDocumentView(user: SessionUser, documentId: string) {
 }
 
 export async function listNotifications(userId: string) {
-  const items = await prisma.notification.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-    take: 40,
-  });
-  return items.map((item) => ({
-    id: item.id,
-    kind: item.kind,
-    title: item.title,
-    body: item.body,
-    href: item.href,
-    read: item.read,
-    createdAt: iso(item.createdAt),
-  }));
+  const { microsoftAlerts } = await import("@/server/microsoft");
+  const [items, desk] = await Promise.all([
+    prisma.notification.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 40,
+    }),
+    microsoftAlerts(userId),
+  ]);
+  return {
+    microsoft: desk,
+    items: items.map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      title: item.title,
+      body: item.body,
+      href: item.href,
+      read: item.read,
+      createdAt: iso(item.createdAt),
+    })),
+  };
 }
 
 export async function notificationPreview(userId: string) {
-  const [items, unread] = await Promise.all([
+  const { microsoftAlerts } = await import("@/server/microsoft");
+  const [items, unread, desk] = await Promise.all([
     prisma.notification.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
       take: 5,
     }),
     prisma.notification.count({ where: { userId, read: false } }),
+    microsoftAlerts(userId),
   ]);
   return {
-    unread,
-    items: items.map((item) => ({
-      id: item.id,
-      title: item.title,
-      href: item.href,
-      read: item.read,
-      createdAt: iso(item.createdAt),
-    })),
+    unread: unread + desk.filter((item) => !item.read).length,
+    items: [
+      ...desk.map((item) => ({
+        id: item.id,
+        title: item.title,
+        href: item.href,
+        read: item.read,
+        createdAt: item.createdAt,
+      })),
+      ...items.map((item) => ({
+        id: item.id,
+        title: item.title,
+        href: item.href,
+        read: item.read,
+        createdAt: iso(item.createdAt),
+      })),
+    ].slice(0, 8),
   };
 }
 

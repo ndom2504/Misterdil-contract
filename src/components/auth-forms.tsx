@@ -21,19 +21,16 @@ function MicrosoftMark() {
 }
 
 function MicrosoftButton() {
-  const [note, setNote] = useState("");
   return (
     <div>
       <p className="text-center text-xs text-[#8b939e]">Continuer avec</p>
-      <button
-        type="button"
-        onClick={() => setNote("La connexion Microsoft sera branchée dès que l'application Entra est prête. En attendant, utilisez votre courriel.")}
+      <a
+        href="/api/auth/microsoft"
         className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#e6e8ee] bg-white text-sm font-medium text-[#12151a] hover:bg-[#f7f8fb]"
       >
         <MicrosoftMark />
         Microsoft
-      </button>
-      {note ? <p className="mt-2 text-center text-xs text-[#5e6875]">{note}</p> : null}
+      </a>
     </div>
   );
 }
@@ -45,8 +42,7 @@ export function LoginForm({ next = "/accueil" }: { next?: string }) {
   return (
     <div className="rounded-[28px] bg-white p-7 text-[#12151a] shadow-[0_24px_80px_rgba(0,0,0,0.28)] sm:p-8">
       <div className="flex flex-col items-center text-center">
-        <Logo />
-        <p className="-mt-1 text-[10px] text-[#8b939e]">Collaboration smart</p>
+        <Logo stack />
         <h2 className="mt-5 text-xl font-semibold">Connectez-vous à votre espace</h2>
         <p className="mt-1 max-w-xs text-sm leading-5 text-[#5e6875]">Accédez à vos projets et collaborez avec votre réseau en toute sécurité.</p>
       </div>
@@ -103,8 +99,7 @@ export function RegisterForm() {
   return (
     <div className="rounded-[28px] bg-white p-7 text-[#12151a] shadow-[0_24px_80px_rgba(0,0,0,0.28)] sm:p-8">
       <div className="flex flex-col items-center text-center">
-        <Logo />
-        <p className="-mt-1 text-[10px] text-[#8b939e]">Collaboration smart</p>
+        <Logo stack />
         <h2 className="mt-5 text-xl font-semibold">Créer un compte</h2>
         <p className="mt-1 max-w-xs text-sm leading-5 text-[#5e6875]">Ouvrez votre espace, puis votre première entente.</p>
       </div>

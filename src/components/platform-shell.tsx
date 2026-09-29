@@ -61,12 +61,8 @@ export function PlatformShell({
 
   const sidebar = (
     <div className="flex h-full flex-col bg-[#0b1f4d] text-white">
-      <Link href="/accueil" className="flex items-center gap-2.5 px-5 py-5">
-        <Logo tone="light" wordmark={false} />
-        <span className="leading-tight">
-          <span className="block text-sm font-semibold">Misterdil</span>
-          <span className="block text-[10px] text-white/60">Collaboration smart</span>
-        </span>
+      <Link href="/accueil" className="flex justify-center px-5 py-5">
+        <Logo tone="light" stack />
       </Link>
       <nav className="mt-1 flex-1 space-y-0.5 px-3">
         {NAV.map((item) => {
@@ -130,7 +126,7 @@ export function PlatformShell({
           </button>
           <form action="/recherche" className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8b939e]" />
-            <input name="q" placeholder="Rechercher un document, un espace, une personne..." className="h-10 w-full rounded-full border border-[#e6e8ee] bg-white pl-9 pr-3 text-sm outline-none focus:border-[#2f6fed]" />
+            <input name="q" placeholder={documentId ? "Rechercher un document, une section, une personne..." : "Rechercher un document, un espace, une personne..."} className="h-10 w-full rounded-full border border-[#e6e8ee] bg-white pl-9 pr-3 text-sm outline-none focus:border-[#2f6fed]" />
           </form>
           <div className="relative">
             <button className="relative rounded-full bg-white p-2 text-[#3f4854] shadow-sm hover:bg-[#f6f7f9]" onClick={() => { setAlerts((value) => !value); setMenu(false); }} aria-label="Notifications">
@@ -150,14 +146,20 @@ export function PlatformShell({
             ) : null}
           </div>
           <span className="hidden items-center gap-1 rounded-full bg-white px-3 py-2 text-sm text-[#3f4854] shadow-sm sm:inline-flex">Français</span>
-          <Link href="/documents/nouveau" className="inline-flex h-10 items-center gap-1 rounded-full bg-[#2f6fed] px-3 text-sm font-medium text-white hover:bg-[#245bd0] sm:px-4">
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">Nouvelle entente</span>
-          </Link>
+          {documentId ? (
+            <Link href={`/documents/${documentId}?onglet=participants`} className="inline-flex h-10 items-center gap-1 rounded-full bg-[#2f6fed] px-3 text-sm font-medium text-white hover:bg-[#245bd0] sm:px-4">
+              Partager
+            </Link>
+          ) : (
+            <Link href="/documents/nouveau" className="inline-flex h-10 items-center gap-1 rounded-full bg-[#2f6fed] px-3 text-sm font-medium text-white hover:bg-[#245bd0] sm:px-4">
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">Nouvelle entente</span>
+            </Link>
+          )}
         </header>
         <main className="px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
-      {pathname !== "/accueil" ? (
+      {pathname !== "/accueil" && !documentId ? (
         <>
           <button
             className="fixed bottom-5 right-5 z-30 flex items-center gap-2 rounded-full bg-[#1e4ed8] px-4 py-3 text-sm font-medium text-white shadow-lg hover:bg-[#173ea8]"

@@ -9,7 +9,7 @@ export default function ForgotPasswordPage() {
     <AuthStage>
       <div className="rounded-[28px] bg-white p-7 text-[#12151a] shadow-[0_24px_80px_rgba(0,0,0,0.28)] sm:p-8">
         <div className="flex flex-col items-center text-center">
-          <Logo />
+          <Logo stack />
           <h2 className="mt-5 text-xl font-semibold">Mot de passe oublié</h2>
           <p className="mt-2 text-sm leading-6 text-[#5e6875]">
             L&apos;envoi d&apos;un courriel de réinitialisation n&apos;est pas encore branché. Sur la démonstration, le mot de passe des comptes existants est Misterdil2026.

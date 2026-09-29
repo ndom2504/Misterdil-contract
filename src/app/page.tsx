@@ -72,12 +72,8 @@ export default function HomePage() {
 
       <header className="fixed inset-x-0 top-0 z-30 border-b border-white/10 bg-[#07111c]/75 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 lg:px-8">
-          <Link href="/" className="flex items-center gap-3">
-            <Logo tone="light" wordmark={false} />
-            <span className="leading-tight text-white">
-              <span className="block text-[15px] font-semibold tracking-tight">Misterdil</span>
-              <span className="block text-[10px] text-white/70">Collaboration smart</span>
-            </span>
+          <Link href="/" className="flex">
+            <Logo tone="light" stack />
           </Link>
           <nav className="hidden items-center gap-5 text-[13px] text-white/85 xl:flex">
             {nav.map((item) => (
@@ -171,7 +167,7 @@ export default function HomePage() {
               <div className="relative mr-0 rounded-[1.4rem] border border-white/15 bg-[#0c1524]/80 p-2 shadow-[0_30px_80px_rgba(0,0,0,0.45)] xl:mr-16">
                 <div className="overflow-hidden rounded-xl bg-white text-[#12151a]">
                   <div className="flex items-center justify-between border-b border-[#eef0f3] px-3 py-2">
-                    <Logo className="scale-90" />
+                    <Logo stack className="scale-90" />
                     <span className="rounded-full bg-[#2f7cf6] px-2 py-1 text-[10px] font-medium text-white">Nouvelle entente</span>
                   </div>
                   <div className="grid grid-cols-[108px_1fr]">
@@ -388,7 +384,7 @@ export default function HomePage() {
 
       <footer className="border-t border-white/10">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-8 text-sm text-white/55 sm:flex-row sm:items-center sm:justify-between lg:px-8">
-          <Logo tone="light" />
+          <Logo tone="light" stack />
           <span>Créez vos ententes plus rapidement.</span>
         </div>
       </footer>
