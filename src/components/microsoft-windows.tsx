@@ -3,16 +3,8 @@
 import { useState, useTransition, type PointerEvent as ReactPointerEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Archive, CalendarPlus, Check, Mail, Maximize2, Minimize2, MoreHorizontal, Reply, Search, Video, X } from "lucide-react";
-import type { MailWindow, MeetingWindow } from "@/lib/microsoft-desk";
+import { MICROSOFT_NOTICES as notices, type MailWindow, type MeetingWindow } from "@/lib/microsoft-desk";
 import { outlookAction } from "@/server/actions/microsoft";
-
-const notices: Record<string, string> = {
-  ok: "Microsoft est connecté. Vos courriels et vos réunions se lisent ici.",
-  "compte-inconnu": "Ce compte Microsoft ne correspond à aucun utilisateur Misterdil. Connectez-vous d'abord avec votre courriel.",
-  "connexion-interrompue": "La connexion Microsoft a été interrompue.",
-  "connexion-refusee": "Microsoft a refusé la connexion. Vérifiez l'adresse de retour dans Entra.",
-  configuration: "Les clés Microsoft ne sont pas disponibles sur le serveur.",
-};
 
 export function MicrosoftWindows({
   mail,

@@ -2,11 +2,12 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// SQLite keeps the MVP runnable locally. The schema stays portable:
-// point DATABASE_URL at PostgreSQL and change the provider to "postgresql".
+// DATABASE_URL is the pooled connection used by the app; DATABASE_URL_UNPOOLED
+// is the direct connection Prisma Migrate needs (names match the Neon integration on Vercel).
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 model User {

@@ -385,7 +385,13 @@ export default function HomePage() {
       <footer className="border-t border-white/10">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-8 text-sm text-white/55 sm:flex-row sm:items-center sm:justify-between lg:px-8">
           <Logo tone="light" stack />
-          <span>Créez vos ententes plus rapidement.</span>
+          <div className="flex flex-col gap-2 sm:items-end">
+            <span>Créez vos ententes plus rapidement.</span>
+            <div className="flex gap-5">
+              <Link href="/conditions" className="hover:text-white">Conditions d&apos;utilisation</Link>
+              <Link href="/confidentialite" className="hover:text-white">Confidentialité</Link>
+            </div>
+          </div>
         </div>
       </footer>
     </div>

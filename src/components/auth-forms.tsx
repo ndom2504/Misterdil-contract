@@ -35,7 +35,7 @@ function MicrosoftButton() {
   );
 }
 
-export function LoginForm({ next = "/accueil" }: { next?: string }) {
+export function LoginForm({ next = "/accueil", notice }: { next?: string; notice?: string }) {
   const [state, action, pending] = useActionState(login, initial);
   const [visible, setVisible] = useState(false);
 
@@ -46,6 +46,12 @@ export function LoginForm({ next = "/accueil" }: { next?: string }) {
         <h2 className="mt-5 text-xl font-semibold">Connectez-vous à votre espace</h2>
         <p className="mt-1 max-w-xs text-sm leading-5 text-[#5e6875]">Accédez à vos projets et collaborez avec votre réseau en toute sécurité.</p>
       </div>
+      {notice ? (
+        <p role="alert" className="mt-5 flex items-start gap-2 rounded-xl border border-[#f3d6a4] bg-[#fff8ec] p-3 text-sm leading-5 text-[#7a4b0c]">
+          <span className="mt-0.5 shrink-0"><MicrosoftMark /></span>
+          <span>{notice}</span>
+        </p>
+      ) : null}
       <form action={action} className="mt-6 space-y-4">
         <input type="hidden" name="suivant" value={next} />
         <label className="block">
@@ -87,7 +93,6 @@ export function LoginForm({ next = "/accueil" }: { next?: string }) {
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#2f7cf6]" />
         <p><span className="font-medium text-[#12151a]">Vos données sont protégées.</span> L&apos;accès reste limité aux personnes invitées dans chaque espace.</p>
       </div>
-      <p className="mt-4 text-center text-xs leading-5 text-[#8b939e]">Démonstration : jean.dupont@horizon.ca · Misterdil2026</p>
     </div>
   );
 }
@@ -130,6 +135,9 @@ export function RegisterForm() {
           {pending ? "Création..." : "Créer un compte →"}
         </button>
       </form>
+      <div className="mt-5">
+        <MicrosoftButton />
+      </div>
       <p className="mt-5 text-center text-sm text-[#5e6875]">
         Déjà un compte ? <Link href="/connexion" className="font-medium text-[#2f7cf6]">Se connecter</Link>
       </p>

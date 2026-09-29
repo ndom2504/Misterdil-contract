@@ -3,9 +3,8 @@ import path from "path";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { DOCUMENT_TYPES } from "../src/lib/catalog";
-import { ROLE_PERMISSIONS, WORKSPACE_ROLES } from "../src/lib/domain";
 import { progressFromSections } from "../src/lib/progress";
+import { syncReference } from "./reference";
 
 const prisma = new PrismaClient();
 
@@ -15,7 +14,13 @@ const sept26c = new Date("2026-09-26T20:10:00.000Z");
 const sept27a = new Date("2026-09-27T13:15:00.000Z");
 const sept27b = new Date("2026-09-27T15:42:00.000Z");
 
+const DEMO_EMAILS = ["jean.dupont@horizon.ca", "marie.lefebvre@novasoft.ca", "paul.martin@atelierconseil.ca"];
+
 async function reset() {
+  const realUsers = await prisma.user.count({ where: { email: { notIn: DEMO_EMAILS } } });
+  if (realUsers > 0 && process.env.SEED_FORCE !== "1") {
+    throw new Error(`La base contient ${realUsers} compte(s) réel(s). Le seed efface tout : relancez avec SEED_FORCE=1 pour confirmer.`);
+  }
   await prisma.comment.deleteMany();
   await prisma.discussion.deleteMany();
   await prisma.proposal.deleteMany();
@@ -62,49 +67,7 @@ async function main() {
   await reset();
   const passwordHash = await bcrypt.hash("Misterdil2026", 10);
   const files = await demoPdf();
-
-  for (const role of WORKSPACE_ROLES) {
-    await prisma.role.create({
-      data: {
-        id: role.id,
-        label: role.label,
-        description: role.description,
-        permissions: { create: ROLE_PERMISSIONS[role.id].map((key) => ({ key })) },
-      },
-    });
-  }
-
-  for (const type of DOCUMENT_TYPES) {
-    await prisma.documentType.create({
-      data: {
-        id: type.id,
-        label: type.label,
-        description: type.description,
-        position: type.position,
-        blueprint: JSON.stringify(type.blueprint),
-        templates: {
-          create: {
-            name: type.label,
-            fields: {
-              create: type.fields.map((field, index) => ({
-                key: field.key,
-                label: field.label,
-                help: field.help,
-                fieldType: field.fieldType,
-                required: field.required,
-                position: index + 1,
-                groupLabel: field.group,
-                sectionAnchor: field.anchor,
-                optionsJson: field.options.length ? JSON.stringify(field.options) : "",
-                sectors: field.sectors.join(","),
-                excludedSectors: field.excludedSectors.join(","),
-              })),
-            },
-          },
-        },
-      },
-    });
-  }
+  await syncReference(prisma);
 
   await prisma.organization.createMany({
     data: [

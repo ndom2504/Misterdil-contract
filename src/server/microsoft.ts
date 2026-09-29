@@ -142,13 +142,11 @@ function meetingParts(value: string) {
   return { day: dayLabel, time: hm, past };
 }
 
-type AccountRow = { id: string; email: string; accessToken: string; refreshToken: string; expiresAt: string | Date };
-
-async function findAccount(userId: string) {
-  const rows = await prisma.$queryRaw<AccountRow[]>`SELECT id, email, accessToken, refreshToken, expiresAt FROM MicrosoftAccount WHERE userId = ${userId} LIMIT 1`;
-  const row = rows[0];
-  if (!row) return null;
-  return { ...row, expiresAt: new Date(row.expiresAt) };
+function findAccount(userId: string) {
+  return prisma.microsoftAccount.findUnique({
+    where: { userId },
+    select: { id: true, email: true, accessToken: true, refreshToken: true, expiresAt: true },
+  });
 }
 
 async function freshAccessToken(account: { id: string; accessToken: string; refreshToken: string; expiresAt: Date }) {
@@ -164,7 +162,7 @@ async function freshAccessToken(account: { id: string; accessToken: string; refr
   const expiresAt = new Date(Date.now() + (payload.expires_in ?? 3600) * 1000);
   const accessToken = payload.access_token ?? account.accessToken;
   const refreshToken = payload.refresh_token || account.refreshToken;
-  await prisma.$executeRaw`UPDATE MicrosoftAccount SET accessToken = ${accessToken}, refreshToken = ${refreshToken}, expiresAt = ${expiresAt}, updatedAt = ${new Date()} WHERE id = ${account.id}`;
+  await prisma.microsoftAccount.update({ where: { id: account.id }, data: { accessToken, refreshToken, expiresAt } });
   return accessToken;
 }
 
@@ -173,16 +171,11 @@ export async function saveMicrosoftAccount(userId: string, token: TokenResponse)
   const email = profile.mail || profile.userPrincipalName || "";
   const expiresAt = new Date(Date.now() + (token.expires_in ?? 3600) * 1000);
   const accessToken = token.access_token ?? "";
-  const existing = await findAccount(userId);
-  if (existing) {
-    const refreshToken = token.refresh_token || existing.refreshToken;
-    await prisma.$executeRaw`UPDATE MicrosoftAccount SET email = ${email}, accessToken = ${accessToken}, refreshToken = ${refreshToken}, expiresAt = ${expiresAt}, updatedAt = ${new Date()} WHERE id = ${existing.id}`;
-  } else {
-    const id = randomBytes(12).toString("hex");
-    const refreshToken = token.refresh_token ?? "";
-    const now = new Date();
-    await prisma.$executeRaw`INSERT INTO MicrosoftAccount (id, userId, email, accessToken, refreshToken, expiresAt, updatedAt) VALUES (${id}, ${userId}, ${email}, ${accessToken}, ${refreshToken}, ${expiresAt}, ${now})`;
-  }
+  await prisma.microsoftAccount.upsert({
+    where: { userId },
+    create: { userId, email, accessToken, refreshToken: token.refresh_token ?? "", expiresAt },
+    update: { email, accessToken, expiresAt, ...(token.refresh_token ? { refreshToken: token.refresh_token } : {}) },
+  });
   return email;
 }
 
