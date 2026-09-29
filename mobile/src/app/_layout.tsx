@@ -2,9 +2,10 @@ import * as Notifications from 'expo-notifications';
 import { Stack, router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef } from 'react';
-import { Alert } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, View } from 'react-native';
 
+import { IntroVideo } from '@/components/intro-video';
 import { api, errorMessage } from '@/lib/api';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { appRoute } from '@/lib/format';
@@ -29,10 +30,12 @@ function RootNavigator() {
   const ready = signedIn && onboarded;
   const lastResponse = Notifications.useLastNotificationResponse();
   const handledResponse = useRef<string | null>(null);
+  const [introReady, setIntroReady] = useState(false);
+  const [introDone, setIntroDone] = useState(false);
 
   useEffect(() => {
-    if (status !== 'loading') SplashScreen.hideAsync();
-  }, [status]);
+    if (status !== 'loading' && (introReady || introDone)) SplashScreen.hideAsync();
+  }, [status, introReady, introDone]);
 
   useEffect(() => {
     if (signedIn) registerPushToken().catch(() => {});
@@ -58,31 +61,34 @@ function RootNavigator() {
       .catch((error) => Alert.alert('Invitation', errorMessage(error)));
   }, [ready, pendingInvitation, setPendingInvitation]);
 
-  if (status === 'loading') return null;
-
   return (
-    <Stack
-      screenOptions={{
-        headerTintColor: colors.brand,
-        headerTitleStyle: { color: colors.text },
-        headerBackButtonDisplayMode: 'minimal',
-        contentStyle: { backgroundColor: colors.background },
-      }}>
-      <Stack.Protected guard={!signedIn}>
-        <Stack.Screen name="connexion" options={{ headerShown: false }} />
-        <Stack.Screen name="inscription" options={{ title: 'Créer un compte' }} />
-      </Stack.Protected>
-      <Stack.Protected guard={signedIn && !onboarded}>
-        <Stack.Screen name="onboarding" options={{ title: 'Votre profil', headerBackVisible: false }} />
-      </Stack.Protected>
-      <Stack.Protected guard={ready}>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="documents/[id]/index" options={{ title: 'Entente' }} />
-        <Stack.Screen name="documents/[id]/[sectionId]" options={{ title: 'Section' }} />
-        <Stack.Screen name="nouveau" options={{ title: 'Nouvelle entente', presentation: 'modal' }} />
-      </Stack.Protected>
-      <Stack.Screen name="invitation/[token]" options={{ title: 'Invitation' }} />
-      <Stack.Screen name="auth" options={{ headerShown: false }} />
-    </Stack>
+    <View style={{ flex: 1, backgroundColor: colors.navy }}>
+      {status !== 'loading' && (
+        <Stack
+          screenOptions={{
+            headerTintColor: colors.brand,
+            headerTitleStyle: { color: colors.text },
+            headerBackButtonDisplayMode: 'minimal',
+            contentStyle: { backgroundColor: colors.background },
+          }}>
+          <Stack.Protected guard={!signedIn}>
+            <Stack.Screen name="connexion" options={{ headerShown: false }} />
+            <Stack.Screen name="inscription" options={{ title: 'Créer un compte' }} />
+          </Stack.Protected>
+          <Stack.Protected guard={signedIn && !onboarded}>
+            <Stack.Screen name="onboarding" options={{ title: 'Votre profil', headerBackVisible: false }} />
+          </Stack.Protected>
+          <Stack.Protected guard={ready}>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="documents/[id]/index" options={{ title: 'Entente' }} />
+            <Stack.Screen name="documents/[id]/[sectionId]" options={{ title: 'Section' }} />
+            <Stack.Screen name="nouveau" options={{ title: 'Nouvelle entente', presentation: 'modal' }} />
+          </Stack.Protected>
+          <Stack.Screen name="invitation/[token]" options={{ title: 'Invitation' }} />
+          <Stack.Screen name="auth" options={{ headerShown: false }} />
+        </Stack>
+      )}
+      {status !== 'loading' && !introDone && <IntroVideo onReady={() => setIntroReady(true)} onDone={() => setIntroDone(true)} />}
+    </View>
   );
 }

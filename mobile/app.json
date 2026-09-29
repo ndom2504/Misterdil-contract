@@ -39,7 +39,8 @@
       ],
       "expo-secure-store",
       "expo-notifications",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-video"
     ],
     "extra": {
       "apiUrl": "https://misterdil-contract.vercel.app",
