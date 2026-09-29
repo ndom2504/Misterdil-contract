@@ -9,8 +9,31 @@ export function DocumentTable({ documents }: { documents: DocumentSummary[] }) {
     return <p className="px-5 py-8 text-sm text-[#5e6875]">Aucun document pour le moment.</p>;
   }
 
+  const hrefFor = (document: DocumentSummary) =>
+    document.status === "DRAFT" && document.progress.total === 0 ? `/documents/nouveau?brouillon=${document.id}` : `/documents/${document.id}`;
+
   return (
-    <div className="overflow-x-auto">
+    <>
+    <ul className="divide-y divide-[#f2f3f6] border-t border-[#eef0f3] sm:hidden">
+      {documents.map((document) => (
+        <li key={document.id}>
+          <Link href={hrefFor(document)} className="block px-4 py-3 active:bg-[#f7f9fc]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-[#10233f]">{document.title}</p>
+                <p className="truncate text-xs text-[#8b939e]">{document.typeLabel} · {document.workspaceName}</p>
+              </div>
+              <StatusBadge status={document.status} />
+            </div>
+            <div className="mt-2 flex items-center gap-3">
+              <div className="min-w-0 flex-1"><ProgressBar value={document.progress.percent} label="" /></div>
+              <span className="shrink-0 text-[11px] text-[#8b939e]">{formatShort(document.updatedAt)}</span>
+            </div>
+          </Link>
+        </li>
+      ))}
+    </ul>
+    <div className="hidden overflow-x-auto sm:block">
       <table className="w-full min-w-[760px] text-left text-sm">
         <thead className="border-b border-[#eef0f3] text-xs uppercase tracking-wide text-[#8b939e]">
           <tr>
@@ -26,7 +49,7 @@ export function DocumentTable({ documents }: { documents: DocumentSummary[] }) {
           {documents.map((document) => (
             <tr key={document.id} className="border-b border-[#f2f3f6] last:border-0">
               <td className="px-5 py-4">
-                <Link href={document.status === "DRAFT" && document.progress.total === 0 ? `/documents/nouveau?brouillon=${document.id}` : `/documents/${document.id}`} className="font-medium hover:text-[#1e4ed8]">
+                <Link href={hrefFor(document)} className="font-medium hover:text-[#1e4ed8]">
                   {document.title}
                 </Link>
                 <p className="text-xs text-[#8b939e]">{document.workspaceName}</p>
@@ -41,5 +64,6 @@ export function DocumentTable({ documents }: { documents: DocumentSummary[] }) {
         </tbody>
       </table>
     </div>
+    </>
   );
 }

@@ -3,19 +3,139 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Clock, FileText, Mail, MessageSquare, PenLine, Printer, Search, Users, Video } from "lucide-react";
-import { addComment, approveParticipation, createProposal, proposeFormulation, requestValidation, resolveProposal, saveParties, sendForSignature, setDiscussionStatus, setModerator, signDocument } from "@/server/actions/collaboration";
+import { Check, ChevronDown, Clock, Copy, FileText, Lock, Mail, MessageSquare, PenLine, Printer, Search, Send, Sparkles, Users, Video } from "lucide-react";
+import { addComment, approveParticipation, createProposal, proposeFormulation, requestValidation, resolveProposal, saveParties, sendForSignature, sendToMembers, setDiscussionStatus, setModerator, signDocument } from "@/server/actions/collaboration";
 import { setSectionStatus, updateSectionContent } from "@/server/actions/documents";
 import { AssistantPanel } from "@/components/assistant-panel";
+import { PresenceBubbles, type BubblePerson } from "@/components/presence-bubbles";
 import { ProgressBar } from "@/components/progress-bar";
 import { StatusBadge } from "@/components/status-badge";
+import { AGREEMENT_STEPS, StepTrail } from "@/components/step-trail";
 import { Button, Card, Field, controlClass } from "@/components/ui";
-import { partyLabel, sectionStatusLabel } from "@/lib/domain";
+import { useDocumentSync } from "@/components/use-document-sync";
+import type { PresenceEntry, SyncSection } from "@/lib/document-sync";
+import { partyLabel, roleLabel, sectionStatusLabel } from "@/lib/domain";
 import { formatDateTime, formatRelative } from "@/lib/format";
+import { progressFromSections } from "@/lib/progress";
 import { cn } from "@/lib/cn";
+import type { ShareResult } from "@/server/sharing";
 import type { getDocumentView } from "@/server/queries";
 
 type View = NonNullable<Awaited<ReturnType<typeof getDocumentView>>>;
+type SendOutcome = { shared: ShareResult[]; links: View["invitationLinks"] };
+type Conflict = { sectionId: string; message: string; content: string; updatedAt: string };
+
+function buildPeople(view: View, presence: PresenceEntry[]): BubblePerson[] {
+  const seen = new Map(presence.map((entry) => [entry.userId, entry]));
+  const used = new Set<string>();
+  const people: BubblePerson[] = [];
+
+  function registered(userId: string, name: string, organization: string, role: string): BubblePerson {
+    used.add(userId);
+    const entry = seen.get(userId);
+    const isYou = userId === view.currentUserId;
+    if (isYou || entry?.online) {
+      const title = entry?.sectionId ? view.sections.find((section) => section.id === entry.sectionId)?.title : undefined;
+      return { key: userId, name, organization, role, isYou, state: "online", detail: title ? `En ligne · modifie « ${title} »` : "En ligne" };
+    }
+    return {
+      key: userId,
+      name,
+      organization,
+      role,
+      isYou,
+      state: "offline",
+      detail: entry ? `Vu ${formatRelative(entry.lastSeenAt)}` : "N'a pas encore ouvert l'entente",
+    };
+  }
+
+  for (const party of view.stakeholders) {
+    const name = party.representative || party.name;
+    const role = `${partyLabel(party.partyType)} · ${party.userId && party.userId === view.moderatorId ? "Modérateur" : roleLabel(party.accessRole)}`;
+    const organization = party.organization && party.organization !== name ? party.organization : "";
+    if (party.userId) {
+      if (!used.has(party.userId)) people.push(registered(party.userId, name, organization, role));
+      continue;
+    }
+    people.push({
+      key: `party-${party.id}`,
+      name,
+      organization,
+      role,
+      isYou: false,
+      state: party.invitedAt ? "invited" : "draft",
+      detail: party.invitedAt
+        ? "Invitation envoyée, en attente d'inscription"
+        : !party.email
+          ? "Sans courriel : ajoutez-en un pour l'inviter"
+          : view.sentAt ? "Pas encore invité" : "Sera invité à l'envoi de l'entente",
+    });
+  }
+  if (view.moderatorId && !used.has(view.moderatorId)) {
+    people.push(registered(view.moderatorId, view.moderatorName, "", "Modérateur"));
+  }
+  for (const entry of presence) {
+    if (entry.online && !used.has(entry.userId)) {
+      people.push(registered(entry.userId, entry.name, entry.organization, "Membre de l'espace"));
+    }
+  }
+  return people;
+}
+
+function CopyLink({ link }: { link: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full border border-[#e6eef8] bg-white px-3 text-xs font-medium text-[#2f6fed] hover:border-[#c9d7fb]"
+      onClick={() => {
+        void navigator.clipboard?.writeText(link).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1800);
+        });
+      }}
+    >
+      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? "Copié" : "Copier le lien"}
+    </button>
+  );
+}
+
+function SendResults({ outcome, onClose }: { outcome: SendOutcome; onClose: () => void }) {
+  const byEmail = new Map(outcome.links.map((item) => [item.email, item]));
+  return (
+    <section className="rounded-2xl border border-[#cdebd9] bg-[#f2fbf6] p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[#10233f]">Entente envoyée</p>
+          <p className="mt-1 text-xs text-[#3f4854]">Les membres inscrits y ont accès dès maintenant. Les autres doivent créer leur compte depuis leur invitation.</p>
+        </div>
+        <button type="button" className="text-xs text-[#5e6875] hover:text-[#10233f]" onClick={onClose}>Fermer</button>
+      </div>
+      {outcome.shared.length === 0 ? <p className="mt-3 text-sm text-[#5e6875]">Tous les membres avaient déjà été invités.</p> : null}
+      <ul className="mt-3 space-y-2">
+        {outcome.shared.map((item) => {
+          const link = item.link || byEmail.get(item.email)?.link || "";
+          return (
+            <li key={`${item.email}-${item.name}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-3 py-2 text-sm">
+              <span className="min-w-0">
+                <span className="font-medium text-[#10233f]">{item.name}</span>
+                <span className="block text-xs text-[#5e6875]">
+                  {item.status === "notified"
+                    ? "Compte Misterdil : accès ouvert et notification envoyée"
+                    : item.status === "emailed"
+                      ? `Invitation envoyée par Outlook à ${item.email}`
+                      : `Courriel non envoyé : partagez le lien avec ${item.email}`}
+                </span>
+              </span>
+              {item.status !== "notified" && link ? <CopyLink link={link} /> : null}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
 const TABS = [
   ["document", "Document", FileText],
   ["discussions", "Discussions", MessageSquare],
@@ -72,6 +192,68 @@ export function DocumentWorkspace({
   const [zoom, setZoom] = useState("100");
   const [more, setMore] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [sending, startSending] = useTransition();
+  const [live, setLive] = useState<Record<string, SyncSection>>({});
+  const [bases, setBases] = useState<Record<string, string>>({});
+  const basesRef = useRef(bases);
+  basesRef.current = bases;
+  const [conflict, setConflict] = useState<Conflict | null>(null);
+  const [outcome, setOutcome] = useState<SendOutcome | null>(null);
+
+  const sections = view.sections.map((section) => {
+    const fresh = live[section.id];
+    return fresh && fresh.updatedAt >= section.updatedAt
+      ? { ...section, ...fresh, updatedByName: fresh.updatedByName || section.updatedByName }
+      : section;
+  });
+
+  const presence = useDocumentSync({
+    documentId: view.id,
+    loadedAt: view.loadedAt,
+    editing,
+    onSections: (changed) => {
+      setLive((current) => {
+        const next = { ...current };
+        for (const section of changed) {
+          if (!next[section.id] || next[section.id].updatedAt <= section.updatedAt) next[section.id] = section;
+        }
+        return next;
+      });
+    },
+  });
+  const people = buildPeople(view, presence);
+
+  function remember(sectionId: string, content: string, updatedAt: string) {
+    setBases((current) => ({ ...current, [sectionId]: updatedAt }));
+    setLive((current) => {
+      const section = sections.find((item) => item.id === sectionId);
+      if (!section) return current;
+      return {
+        ...current,
+        [sectionId]: {
+          id: sectionId,
+          content,
+          status: section.status === "NOT_STARTED" && content.trim() ? "IN_PREPARATION" : section.status,
+          updatedAt,
+          updatedById: view.currentUserId,
+          updatedByName: "",
+        },
+      };
+    });
+  }
+
+  const rememberRef = useRef(remember);
+  rememberRef.current = remember;
+
+  function startEditing(sectionId: string) {
+    const section = sections.find((item) => item.id === sectionId);
+    if (!section) return;
+    setEditing(sectionId);
+    setDirty(false);
+    setConflict(null);
+    setDrafts((current) => ({ ...current, [sectionId]: section.content }));
+    setBases((current) => ({ ...current, [sectionId]: section.updatedAt }));
+  }
 
   useEffect(() => {
     if (!editing || !dirty) return;
@@ -79,10 +261,53 @@ export function DocumentWorkspace({
     const timer = setTimeout(() => {
       const latest = draftsRef.current[sectionId];
       if (latest == null) return;
-      updateSectionContent(view.id, sectionId, latest, false).then(() => setSaved("Enregistré"));
+      updateSectionContent(view.id, sectionId, latest, false, basesRef.current[sectionId]).then((result) => {
+        if (result.ok) {
+          setDirty(false);
+          setSaved("Enregistré");
+          if (result.updatedAt) rememberRef.current(sectionId, latest, result.updatedAt);
+        } else if ("conflict" in result && result.conflict) {
+          setConflict({ sectionId, message: result.error, content: result.content, updatedAt: result.updatedAt });
+        } else {
+          setError(result.error ?? "Enregistrement impossible.");
+        }
+      });
     }, 900);
     return () => clearTimeout(timer);
   }, [drafts, editing, dirty, view.id]);
+
+  function saveNow(sectionId: string) {
+    const latest = draftsRef.current[sectionId] ?? sections.find((item) => item.id === sectionId)?.content ?? "";
+    setError("");
+    startTransition(async () => {
+      const result = await updateSectionContent(view.id, sectionId, latest, true, basesRef.current[sectionId]);
+      if (result.ok) {
+        if (result.updatedAt) remember(sectionId, latest, result.updatedAt);
+        setEditing(null);
+        setDirty(false);
+        setConflict(null);
+        setSaved("Enregistré");
+        router.refresh();
+      } else if ("conflict" in result && result.conflict) {
+        setConflict({ sectionId, message: result.error, content: result.content, updatedAt: result.updatedAt });
+      } else {
+        setError(result.error ?? "Enregistrement impossible.");
+      }
+    });
+  }
+
+  function send() {
+    setError("");
+    startSending(async () => {
+      const result = await sendToMembers(view.id);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setOutcome({ shared: result.shared, links: result.links });
+      router.refresh();
+    });
+  }
 
   function run(task: () => Promise<{ ok: boolean; error?: string }>) {
     setError("");
@@ -97,15 +322,28 @@ export function DocumentWorkspace({
   }
 
   const version = view.versions.find((item) => item.id === versionId) ?? view.versions[0];
-  const active = view.sections.find((section) => section.id === activeId) ?? view.sections[0];
-  const activeIndex = Math.max(0, view.sections.findIndex((section) => section.id === active?.id));
-  const content = active ? (drafts[active.id] ?? active.content) : "";
+  const active = sections.find((section) => section.id === activeId) ?? sections[0];
+  const activeIndex = Math.max(0, sections.findIndex((section) => section.id === active?.id));
+  const isEditingActive = Boolean(active && editing === active.id);
+  const content = active ? (isEditingActive ? drafts[active.id] ?? active.content : active.content) : "";
   const proposals = active ? view.proposals.filter((item) => item.sectionId === active.id && item.status === "PENDING") : [];
   const sectionTalks = active ? view.discussions.filter((item) => item.sectionId === active.id) : [];
-  const nextSection = view.sections.find((section) => section.status === "IN_DISCUSSION" || section.status === "CHANGES_REQUESTED") ?? view.sections.find((section) => section.status !== "VALIDATED" && section.status !== "LOCKED");
+  const nextSection = sections.find((section) => section.status === "IN_DISCUSSION" || section.status === "CHANGES_REQUESTED") ?? sections.find((section) => section.status !== "VALIDATED" && section.status !== "LOCKED");
   const organizations = [...new Set(view.stakeholders.map((party) => party.organization).filter(Boolean))].slice(0, 2);
-  const openSections = view.sections.filter((section) => section.status !== "VALIDATED" && section.status !== "LOCKED");
-  const filteredSections = view.sections.filter((section) => section.title.toLowerCase().includes(sectionQuery.trim().toLowerCase()));
+  const openSections = sections.filter((section) => section.status !== "VALIDATED" && section.status !== "LOCKED");
+  const filteredSections = sections.filter((section) => section.title.toLowerCase().includes(sectionQuery.trim().toLowerCase()));
+  const progress = progressFromSections(sections);
+  const canWriteActive = Boolean(active && view.access.canWrite && active.status !== "LOCKED");
+  const lockedBy = active
+    ? presence.find((entry) => entry.online && entry.userId !== view.currentUserId && entry.sectionId === active.id)
+    : undefined;
+  const remoteChange =
+    active && isEditingActive && active.updatedById && active.updatedById !== view.currentUserId && bases[active.id] && active.updatedAt > bases[active.id]
+      ? active
+      : null;
+  const recipients = view.stakeholders.filter((party) => !party.isCurrentUser && party.userId !== view.currentUserId);
+  const reachable = recipients.filter((party) => party.userId || party.email);
+  const setupStep = sections.some((section) => section.anchor !== "parties" && section.content.trim()) ? 3 : 2;
 
   return (
     <div className="space-y-4">
@@ -130,6 +368,7 @@ export function DocumentWorkspace({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <PresenceBubbles people={people} max={5} className="mr-1" />
           <a className="inline-flex h-10 items-center rounded-full border border-[#e6eef8] bg-white px-3 text-sm text-[#243040]" href={`/api/documents/${view.id}/export?format=pdf`}>Exporter PDF</a>
           <a className="inline-flex h-10 items-center rounded-full border border-[#e6eef8] bg-white px-3 text-sm text-[#243040]" href={`/api/documents/${view.id}/export?format=docx`}>Exporter Word</a>
           <a className="inline-flex h-10 items-center gap-1 rounded-full border border-[#e6eef8] bg-white px-3 text-sm text-[#243040]" href={`/documents/${view.id}/imprimer`} target="_blank"><Printer className="h-4 w-4" />Imprimer</a>
@@ -139,7 +378,7 @@ export function DocumentWorkspace({
             </button>
             {more && active ? (
               <div className="absolute right-0 z-10 mt-2 w-56 rounded-2xl border border-[#e6eef8] bg-white p-2 text-sm shadow-lg">
-                {view.access.canEdit && active.status !== "LOCKED" ? <button type="button" className="block w-full rounded-xl px-3 py-2 text-left hover:bg-[#f4f7fb]" onClick={() => { setEditing(active.id); setDrafts((current) => ({ ...current, [active.id]: active.content })); setMore(false); }}>Modifier la section</button> : null}
+                {canWriteActive && !lockedBy && !isEditingActive ? <button type="button" className="block w-full rounded-xl px-3 py-2 text-left hover:bg-[#f4f7fb]" onClick={() => { startEditing(active.id); setMore(false); }}>Modifier la section</button> : null}
                 {view.access.canValidate && active.status !== "VALIDATED" ? <button type="button" className="block w-full rounded-xl px-3 py-2 text-left hover:bg-[#f4f7fb]" onClick={() => { setMore(false); run(() => setSectionStatus(view.id, active.id, "VALIDATED")); }}>Valider la section</button> : null}
                 {view.access.canLock && active.status !== "LOCKED" ? <button type="button" className="block w-full rounded-xl px-3 py-2 text-left hover:bg-[#f4f7fb]" onClick={() => { setMore(false); run(() => setSectionStatus(view.id, active.id, "LOCKED")); }}>Verrouiller</button> : null}
                 {view.access.canLock && active.status === "LOCKED" ? <button type="button" className="block w-full rounded-xl px-3 py-2 text-left hover:bg-[#f4f7fb]" onClick={() => { setMore(false); run(() => setSectionStatus(view.id, active.id, "IN_PREPARATION")); }}>Déverrouiller</button> : null}
@@ -152,22 +391,61 @@ export function DocumentWorkspace({
         </div>
       </div>
 
+      {!view.sentAt && view.access.canInvite ? (
+        <section className="space-y-4 rounded-2xl border border-[#d7e6ff] bg-[#f3f8ff] p-4 shadow-sm">
+          <div>
+            <p className="text-sm font-semibold text-[#10233f]">Préparez l&apos;entente, puis envoyez-la aux membres</p>
+            <p className="mt-1 text-sm leading-6 text-[#3f4854]">Les sections sont vides et modifiables. Rédigez-les vous-même ou laissez l&apos;assistant proposer un premier jet. Les autres parties n&apos;y ont pas accès avant l&apos;envoi.</p>
+          </div>
+          <StepTrail steps={AGREEMENT_STEPS} current={setupStep} />
+          {recipients.length && !reachable.length ? (
+            <p className="text-sm text-[#9f2d2d]">Ajoutez le courriel d&apos;au moins une autre partie pour pouvoir envoyer l&apos;entente.</p>
+          ) : null}
+          {recipients.length ? (
+            <ul className="flex flex-wrap gap-2">
+              {recipients.map((party) => (
+                <li key={party.id} className="flex items-center gap-2 rounded-full border border-[#e6eef8] bg-white px-3 py-1.5 text-xs">
+                  <span className="font-medium text-[#10233f]">{party.representative || party.name}</span>
+                  <span className={party.userId ? "text-[#14804a]" : party.email ? "text-[#c56a10]" : "text-[#9f2d2d]"}>
+                    {party.userId ? "Compte Misterdil" : party.email ? "Sera invité à s'inscrire" : "Sans courriel"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-[#9f2d2d]">Ajoutez au moins une autre partie dans l&apos;onglet Participants.</p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/documents/nouveau?brouillon=${view.id}`} className="inline-flex h-10 items-center gap-2 rounded-full border border-[#c9d7fb] bg-white px-4 text-sm font-medium text-[#2f6fed]">
+              <Sparkles className="h-4 w-4" />Pré-remplir avec l&apos;assistant
+            </Link>
+            <button type="button" onClick={() => setTab("participants")} className="inline-flex h-10 items-center gap-2 rounded-full border border-[#e6eef8] bg-white px-4 text-sm text-[#243040]">
+              <Users className="h-4 w-4" />Modifier l&apos;équipe
+            </button>
+            <button type="button" disabled={sending || reachable.length === 0} onClick={send} className="inline-flex h-10 items-center gap-2 rounded-full bg-[#2f6fed] px-4 text-sm font-medium text-white disabled:opacity-60">
+              <Send className="h-4 w-4" />{sending ? "Envoi..." : "Envoyer aux membres"}
+            </button>
+          </div>
+        </section>
+      ) : null}
+      {outcome ? <SendResults outcome={outcome} onClose={() => setOutcome(null)} /> : null}
+
       <section className="grid gap-4 rounded-2xl border border-[#e6eef8] bg-white p-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center">
         <div>
-          <ProgressBar value={view.progress.percent} />
-          <p className="mt-2 text-sm text-[#5e6875]">{view.progress.validated} / {view.progress.total} sections validées · {view.progress.discussion} en discussion · {view.progress.todo} à compléter</p>
+          <ProgressBar value={progress.percent} />
+          <p className="mt-2 text-sm text-[#5e6875]">{progress.validated} / {progress.total} sections validées · {progress.discussion} en discussion · {progress.todo} à compléter</p>
           {saved ? <p className="mt-1 text-xs text-[#14804a]">{saved}</p> : null}
         </div>
         {nextSection ? (
           <button type="button" onClick={() => { setTab("document"); setActiveId(nextSection.id); }} className="rounded-2xl border border-[#e6eef8] px-4 py-3 text-left hover:border-[#c9d7fb]">
             <p className="text-xs text-[#8b939e]">Prochaine étape</p>
-            <p className="mt-1 flex items-center gap-2 text-sm font-medium text-[#10233f]"><Clock className="h-4 w-4 text-[#2f6fed]" />Réviser la section {view.sections.findIndex((section) => section.id === nextSection.id) + 1}</p>
+            <p className="mt-1 flex items-center gap-2 text-sm font-medium text-[#10233f]"><Clock className="h-4 w-4 text-[#2f6fed]" />Réviser la section {sections.findIndex((section) => section.id === nextSection.id) + 1}</p>
             <p className="text-xs text-[#6b7280]">{nextSection.title}</p>
           </button>
         ) : null}
       </section>
 
-      <div className="flex gap-1 overflow-x-auto rounded-2xl border border-[#e6eef8] bg-white px-2 py-2 shadow-sm">
+      <div className="flex gap-1 overflow-x-auto scrollbar-none rounded-2xl border border-[#e6eef8] bg-white px-2 py-2 shadow-sm">
         {TABS.map(([id, label, Icon]) => {
           const count = id === "discussions" ? view.discussions.length : id === "participants" ? view.stakeholders.length : 0;
           return (
@@ -194,12 +472,14 @@ export function DocumentWorkspace({
               </div>
               <div className="space-y-1">
                 {filteredSections.map((section) => {
-                  const index = view.sections.findIndex((item) => item.id === section.id);
+                  const index = sections.findIndex((item) => item.id === section.id);
                   const selected = section.id === active.id;
+                  const writer = presence.find((entry) => entry.online && entry.userId !== view.currentUserId && entry.sectionId === section.id);
                   return (
                     <button key={section.id} type="button" onClick={() => setActiveId(section.id)} className={cn("flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-sm", selected ? "bg-[#e8f0ff]" : "hover:bg-[#f4f7fb]")}>
                       <span className="w-5 shrink-0 text-xs text-[#8b939e]">{index + 1}</span>
                       <span className="min-w-0 flex-1 truncate text-[#10233f]">{section.title}</span>
+                      {writer ? <span title={`${writer.name} modifie cette section`}><PenLine className="h-3.5 w-3.5 shrink-0 animate-pulse text-[#0f9d78]" /></span> : null}
                       <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", statusTone(section.status))}>{sectionStatusLabel(section.status)}</span>
                     </button>
                   );
@@ -224,22 +504,63 @@ export function DocumentWorkspace({
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-lg font-semibold text-[#10233f]">{activeIndex + 1}. {active.title}</h2>
                   <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", statusTone(active.status))}>{sectionStatusLabel(active.status)}</span>
+                  {active.updatedByName && active.updatedAt ? (
+                    <span className="text-xs text-[#8b939e]">Modifié par {active.updatedByName} {formatRelative(active.updatedAt)}</span>
+                  ) : null}
                 </div>
+                {lockedBy ? (
+                  <p className="mt-3 flex items-center gap-2 rounded-xl bg-[#ecfdf5] px-3 py-2 text-xs text-[#0f766e]">
+                    <Lock className="h-3.5 w-3.5 shrink-0" />
+                    {lockedBy.name} modifie cette section. Le texte se met à jour en direct.
+                  </p>
+                ) : null}
+                {conflict && conflict.sectionId === active.id ? (
+                  <div className="mt-3 rounded-xl border border-[#f3d2a6] bg-[#fff7ed] px-3 py-3 text-sm text-[#7c3d0b]">
+                    <p>{conflict.message} Votre texte n&apos;a pas été enregistré.</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button variant="secondary" type="button" onClick={() => {
+                        draftsRef.current = { ...draftsRef.current, [active.id]: conflict.content };
+                        setDrafts(draftsRef.current);
+                        setBases((current) => ({ ...current, [active.id]: conflict.updatedAt }));
+                        setDirty(false);
+                        setConflict(null);
+                      }}>Reprendre leur version</Button>
+                      <Button variant="ghost" type="button" onClick={() => {
+                        setBases((current) => ({ ...current, [active.id]: conflict.updatedAt }));
+                        setConflict(null);
+                        setDirty(true);
+                      }}>Garder mon texte</Button>
+                    </div>
+                  </div>
+                ) : remoteChange ? (
+                  <p className="mt-3 rounded-xl bg-[#fff7ed] px-3 py-2 text-xs text-[#7c3d0b]">
+                    {remoteChange.updatedByName || "Un participant"} vient de modifier cette section pendant que vous écriviez.
+                  </p>
+                ) : null}
                 {version && version.id !== view.versions[0]?.id ? (
                   <div className="mt-4 whitespace-pre-wrap text-sm leading-7 text-[#243040]">
                     {version.sections.find((section) => section.title === active.title)?.content ?? "Cette version ne contient pas cette section."}
                   </div>
-                ) : editing === active.id && view.access.canEdit && active.status !== "LOCKED" ? (
-                  <textarea id={`editor-${active.id}`} className={`${controlClass} mt-4 min-h-56`} value={content} onChange={(event) => {
+                ) : isEditingActive && canWriteActive ? (
+                  <textarea id={`editor-${active.id}`} className={`${controlClass} mt-4 min-h-56`} value={content} autoFocus onChange={(event) => {
                     const value = event.target.value;
                     draftsRef.current = { ...draftsRef.current, [active.id]: value };
                     setDirty(true);
                     setDrafts(draftsRef.current);
                   }} />
-                ) : (
+                ) : content.trim() ? (
                   <div className="mt-4 whitespace-pre-wrap text-sm leading-7 text-[#243040]">
                     <HighlightedText text={content} marks={proposals.map((item) => item.previousText)} />
                   </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={!canWriteActive || Boolean(lockedBy)}
+                    onClick={() => startEditing(active.id)}
+                    className="mt-4 w-full rounded-xl border border-dashed border-[#d6dde8] px-4 py-8 text-center text-sm text-[#8b939e] enabled:hover:border-[#9db8f5] enabled:hover:text-[#2f6fed]"
+                  >
+                    {canWriteActive ? "Section vide. Cliquez pour commencer la rédaction." : "Cette section n'est pas encore rédigée."}
+                  </button>
                 )}
                 {proposalFor === active.id ? (
                   <div className="mt-4 space-y-2">
@@ -276,12 +597,17 @@ export function DocumentWorkspace({
                 ))}
               </div>
               <div className="flex items-center justify-end gap-2 border-t border-[#eef2f7] px-4 py-3">
-                {view.access.canEdit && active.status !== "LOCKED" && editing !== active.id ? <Button variant="secondary" type="button" onClick={() => { setEditing(active.id); setDrafts((current) => ({ ...current, [active.id]: active.content })); }}>Modifier</Button> : null}
-                {view.access.canEdit && active.status !== "LOCKED" ? (
-                  <button type="button" className="inline-flex h-9 items-center rounded-full bg-[#2f6fed] px-4 text-sm font-medium text-white" onClick={() => {
-                    const latest = draftsRef.current[active.id] ?? content;
-                    run(() => updateSectionContent(view.id, active.id, latest, true));
-                  }}>Enregistrer</button>
+                {canWriteActive && !isEditingActive ? (
+                  <Button variant="secondary" type="button" disabled={Boolean(lockedBy)} onClick={() => startEditing(active.id)}>Modifier</Button>
+                ) : null}
+                {canWriteActive && isEditingActive ? (
+                  <>
+                    <Button variant="ghost" type="button" disabled={pending} onClick={() => {
+                      if (dirty) saveNow(active.id);
+                      else { setEditing(null); setConflict(null); }
+                    }}>Fermer</Button>
+                    <button type="button" disabled={pending} className="inline-flex h-9 items-center rounded-full bg-[#2f6fed] px-4 text-sm font-medium text-white disabled:opacity-60" onClick={() => saveNow(active.id)}>Enregistrer</button>
+                  </>
                 ) : null}
               </div>
             </section>
@@ -417,6 +743,14 @@ export function DocumentWorkspace({
 
       {tab === "participants" ? (
         <Card className="p-6">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[#eef0f3] pb-5">
+            <PresenceBubbles people={people} max={10} />
+            {!view.sentAt && view.access.canInvite ? (
+              <button type="button" disabled={sending || reachable.length === 0} onClick={send} className="inline-flex h-10 items-center gap-2 rounded-full bg-[#2f6fed] px-4 text-sm font-medium text-white disabled:opacity-60">
+                <Send className="h-4 w-4" />{sending ? "Envoi..." : "Envoyer aux membres"}
+              </button>
+            ) : null}
+          </div>
           <p className="text-sm font-medium">Modérateur : {view.moderatorName}</p>
           {view.access.canInvite ? (
             <div className="mt-3 max-w-sm">
@@ -426,15 +760,39 @@ export function DocumentWorkspace({
             </div>
           ) : null}
           <ul className="mt-6 divide-y divide-[#f2f3f6]">
-            {view.stakeholders.map((party) => (
-              <li key={party.id} className="py-3 text-sm">
-                <p className="font-medium">{party.organization || party.name}</p>
-                <p className="text-[#5e6875]">{partyLabel(party.partyType)} · {party.representative || party.name} · {party.jobTitle}</p>
-                <p className="text-[#8b939e]">{party.email}{party.phone ? ` · ${party.phone}` : ""}</p>
-              </li>
-            ))}
+            {view.stakeholders.map((party) => {
+              const person = people.find((item) => item.key === (party.userId ?? `party-${party.id}`));
+              const link = !party.userId ? view.invitationLinks.find((item) => item.email === party.email.toLowerCase()) : undefined;
+              return (
+                <li key={party.id} className="flex flex-wrap items-start justify-between gap-3 py-3 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-medium">{party.organization || party.name}</p>
+                    <p className="text-[#5e6875]">{[partyLabel(party.partyType), party.representative || party.name, party.jobTitle].filter(Boolean).join(" · ")}</p>
+                    <p className="text-[#8b939e]">{party.email}{party.phone ? ` · ${party.phone}` : ""}</p>
+                    {person ? (
+                      <p className={cn(
+                        "mt-1 text-xs",
+                        person.state === "online" ? "text-[#14804a]" : person.state === "offline" ? "text-[#5e6875]" : "text-[#c56a10]",
+                      )}>
+                        {person.detail}
+                        {link ? (link.emailed ? " · courriel envoyé" : " · courriel non envoyé") : ""}
+                      </p>
+                    ) : null}
+                  </div>
+                  {link ? <CopyLink link={link.link} /> : null}
+                </li>
+              );
+            })}
           </ul>
-          {view.access.canInvite ? <InviteForm view={view} onDone={() => router.refresh()} /> : null}
+          {view.access.canInvite ? (
+            <InviteForm
+              view={view}
+              onDone={(shared) => {
+                if (shared.length) setOutcome({ shared, links: [] });
+                router.refresh();
+              }}
+            />
+          ) : null}
         </Card>
       ) : null}
 
@@ -527,7 +885,7 @@ export function DocumentWorkspace({
   );
 }
 
-function InviteForm({ view, onDone }: { view: View; onDone: () => void }) {
+function InviteForm({ view, onDone }: { view: View; onDone: (shared: ShareResult[]) => void }) {
   const [party, setParty] = useState({ name: "", organization: "", partyType: "PARTNER", email: "", phone: "", representative: "", jobTitle: "", address: "", accessRole: "PARTICIPANT" });
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
@@ -547,8 +905,13 @@ function InviteForm({ view, onDone }: { view: View; onDone: () => void }) {
           address: item.address,
           accessRole: item.accessRole,
         })), party], view.moderatorId ?? "");
-        setMessage(result.ok ? "Invitation enregistrée. Le courriel partira lorsque la messagerie sera connectée." : result.error);
-        if (result.ok) onDone();
+        if (!result.ok) {
+          setMessage(result.error);
+          return;
+        }
+        setMessage(view.sentAt ? "Partie ajoutée et invitée." : "Partie ajoutée. Elle recevra l'entente à l'envoi.");
+        setParty((current) => ({ ...current, name: "", organization: "", email: "" }));
+        onDone(result.shared);
       });
     }}>
       <input className={controlClass} placeholder="Nom" value={party.name} onChange={(event) => setParty({ ...party, name: event.target.value })} required />

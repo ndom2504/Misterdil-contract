@@ -294,6 +294,44 @@ export async function mailAction(userId: string, messageId: string, action: "rea
   }
 }
 
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] ?? char);
+}
+
+// Sent from the inviter's own mailbox, so replies reach them directly.
+export async function sendInvitationMail(
+  userId: string,
+  input: { to: string; toName: string; inviterName: string; organization: string; title: string; link: string },
+) {
+  if (!configured()) return false;
+  const account = await findAccount(userId).catch(() => null);
+  if (!account) return false;
+  const from = input.organization ? `${input.inviterName} (${input.organization})` : input.inviterName;
+  const html = [
+    `<p>Bonjour ${escapeHtml(input.toName || "")},</p>`,
+    `<p>${escapeHtml(from)} vous invite à participer à l'entente <strong>« ${escapeHtml(input.title)} »</strong> sur Misterdil.</p>`,
+    `<p>Créez votre compte pour consulter le document, le modifier avec les autres parties et suivre les échanges en direct.</p>`,
+    `<p><a href="${escapeHtml(input.link)}" style="display:inline-block;padding:10px 18px;border-radius:8px;background:#1e4ed8;color:#ffffff;text-decoration:none;font-weight:600">Rejoindre l'entente</a></p>`,
+    `<p style="color:#5e6875;font-size:13px">Ou copiez ce lien : ${escapeHtml(input.link)}</p>`,
+    `<p style="color:#5e6875;font-size:13px">Misterdil · Une collaboration plus smart</p>`,
+  ].join("");
+  try {
+    const token = await freshAccessToken(account);
+    await graphWrite(token, "/me/sendMail", "POST", {
+      message: {
+        subject: `${input.inviterName} vous invite à l'entente « ${input.title} »`,
+        body: { contentType: "HTML", content: html },
+        toRecipients: [{ emailAddress: { address: input.to, name: input.toName || input.to } }],
+      },
+      saveToSentItems: true,
+    });
+    return true;
+  } catch (error) {
+    console.error(`[invitation] envoi Outlook refusé (${(error as { status?: number }).status ?? "?"})`);
+    return false;
+  }
+}
+
 export async function microsoftAlerts(userId: string) {
   try {
     const board = await getMicrosoftBoard(userId);

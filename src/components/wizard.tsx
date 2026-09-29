@@ -1,26 +1,35 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  ArrowLeft,
   Building2,
+  Check,
   FileSignature,
   FileText,
   Handshake,
   Lock,
   Package,
   PenLine,
+  Plus,
   ScrollText,
   Search,
+  Sparkles,
+  Trash2,
+  UserCheck,
+  UserPlus,
   Users,
   Wrench,
   ClipboardList,
 } from "lucide-react";
 import { analyzeProject, moreDomains } from "@/server/actions/assistant";
-import { saveParties } from "@/server/actions/collaboration";
-import { confirmBrief, createDraft, generateDocument, loadFields, saveContext, saveDescription, saveResponse, saveResponses, saveTitle } from "@/server/actions/documents";
+import { searchPeople, type PersonMatch } from "@/server/actions/people";
+import { confirmBrief, createAgreement, generateDocument, loadFields, saveContext, saveDescription, saveResponse, saveResponses, saveTitle } from "@/server/actions/documents";
 import { createWorkspace } from "@/server/actions/workspaces";
 import { PARTY_TYPES } from "@/lib/domain";
+import { AGREEMENT_STEPS, StepTrail } from "@/components/step-trail";
 import { Button, Card, Field, controlClass } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
@@ -38,7 +47,8 @@ const ICONS = {
   personnalise: PenLine,
 } as const;
 
-const STEPS = ["Type", "Contexte", "Projet", "Parties", "Informations", "Génération"];
+const ASSISTANT_STEPS = ["Contexte", "Projet", "Informations"];
+const TEAM_STORAGE = "misterdil:nouvelle-entente";
 
 type WorkspaceOption = { id: string; name: string };
 type TypeOption = { id: string; label: string; description: string };
@@ -65,10 +75,18 @@ type Draft = {
   domain: string;
   description: string;
   brief: Brief | null;
-  wizardStep: number;
   responses: Record<string, string>;
-  stakeholders: Party[];
-  moderatorId: string | null;
+  hasContent: boolean;
+};
+type WizardUser = {
+  id: string;
+  name: string;
+  email: string;
+  organization: string;
+  jobTitle: string;
+  phone: string;
+  address: string;
+  individual: boolean;
 };
 
 const emptyParty = (): Party => ({
@@ -83,6 +101,90 @@ const emptyParty = (): Party => ({
   accessRole: "PARTICIPANT",
 });
 
+function initials(name: string) {
+  return name.split(/\s+/).map((part) => part[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+}
+
+function PartySearch({ added, onAdd }: { added: string[]; onAdd: (person: PersonMatch) => void }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<PersonMatch[] | null>(null);
+  const [searching, setSearching] = useState(false);
+
+  function search() {
+    const text = query.trim();
+    if (text.length < 2) {
+      setResults([]);
+      return;
+    }
+    setSearching(true);
+    searchPeople(text)
+      .then(setResults)
+      .catch(() => setResults([]))
+      .finally(() => setSearching(false));
+  }
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-start gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef3ff] text-[#1e4ed8]"><UserPlus className="h-4 w-4" /></span>
+        <div className="min-w-0">
+          <p className="font-semibold">Ajouter un utilisateur inscrit</p>
+          <p className="mt-0.5 text-sm text-[#5e6875]">Ses coordonnées se remplissent seules. Il aura accès à l&apos;entente dès l&apos;envoi.</p>
+        </div>
+      </div>
+      <form
+        className="mt-4 flex flex-col gap-2 sm:flex-row"
+        onSubmit={(event) => {
+          event.preventDefault();
+          search();
+        }}
+      >
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8b939e]" />
+          <input
+            className={`${controlClass} pl-9`}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Nom, organisation ou courriel exact"
+            aria-label="Rechercher un utilisateur inscrit"
+          />
+        </div>
+        <Button type="submit" disabled={searching || query.trim().length < 2}>
+          <Search className="h-4 w-4" />
+          {searching ? "Recherche..." : "Rechercher"}
+        </Button>
+      </form>
+      {results ? (
+        results.length ? (
+          <ul className="mt-3 divide-y divide-[#eef0f4] rounded-xl border border-[#e6e8ee]">
+            {results.map((person) => {
+              const already = added.includes(person.email);
+              return (
+                <li key={person.id} className="flex items-center gap-3 px-3 py-2.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1e4ed8] text-xs font-semibold text-white">
+                    {initials(person.name)}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{person.name}</p>
+                    <p className="truncate text-xs text-[#5e6875]">{[person.organization, person.email].filter(Boolean).join(" · ")}</p>
+                  </div>
+                  <Button type="button" variant={already ? "ghost" : "secondary"} disabled={already} onClick={() => onAdd(person)} className="h-8 shrink-0 px-2.5 text-xs">
+                    {already ? <><Check className="h-3.5 w-3.5" />Ajouté</> : <><Plus className="h-3.5 w-3.5" />Ajouter</>}
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="mt-3 text-sm text-[#5e6875]">
+            Aucun utilisateur trouvé dans votre réseau. Saisissez son courriel exact, ou ajoutez la partie à la main ci-dessous.
+          </p>
+        )
+      ) : null}
+    </Card>
+  );
+}
+
 export function AgreementWizard({
   workspaces,
   types,
@@ -93,56 +195,59 @@ export function AgreementWizard({
   workspaces: WorkspaceOption[];
   types: TypeOption[];
   sectors: SectorOption[];
-  user: { id: string; name: string; email: string; organization: string; jobTitle: string };
+  user: WizardUser;
   draft: Draft | null;
 }) {
+  if (draft) return <AssistantPrefill draft={draft} sectors={sectors} />;
+  return <NewAgreement workspaces={workspaces} types={types} user={user} />;
+}
+
+function NewAgreement({ workspaces, types, user }: { workspaces: WorkspaceOption[]; types: TypeOption[]; user: WizardUser }) {
   const router = useRouter();
-  const [step, setStep] = useState(draft ? Math.min(Math.max(draft.wizardStep, 2), 6) - 1 : 0);
-  const [workspaceId, setWorkspaceId] = useState(draft ? "" : workspaces[0]?.id ?? "");
+  const self: Party = {
+    ...emptyParty(),
+    name: user.name,
+    organization: user.individual ? "" : user.organization,
+    partyType: "CLIENT",
+    email: user.email,
+    phone: user.phone,
+    representative: user.name,
+    jobTitle: user.individual ? "" : user.jobTitle,
+    address: user.address,
+  };
+  const [step, setStep] = useState(0);
+  const [parties, setParties] = useState<Party[]>([self, emptyParty()]);
+  const [linked, setLinked] = useState<Set<string>>(() => new Set([user.email.toLowerCase()]));
+  const [restored, setRestored] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id ?? "");
+  const [spaces, setSpaces] = useState(workspaces);
   const [newSpace, setNewSpace] = useState("");
   const [query, setQuery] = useState("");
-  const [typeId, setTypeId] = useState(draft?.typeId ?? "");
-  const [sector, setSector] = useState(draft?.sector ?? "");
-  const [domain, setDomain] = useState(draft?.domain ?? "");
-  const [extraDomains, setExtraDomains] = useState<string[]>([]);
-  const [description, setDescription] = useState(draft?.description ?? "");
-  const [brief, setBrief] = useState<Brief | null>(draft?.brief ?? null);
-  const [editingBrief, setEditingBrief] = useState(false);
-  const [parties, setParties] = useState<Party[]>(
-    draft?.stakeholders.length
-      ? draft.stakeholders
-      : [{ ...emptyParty(), name: user.name, organization: user.organization, partyType: "CLIENT", email: user.email, representative: user.name, jobTitle: user.jobTitle, accessRole: "PARTICIPANT" }],
-  );
-  const [fields, setFields] = useState<FieldOption[]>([]);
-  const [responses, setResponses] = useState<Record<string, string>>(draft?.responses ?? {});
-  const [title, setTitle] = useState(draft?.title ?? "");
+  const [typeId, setTypeId] = useState("");
+  const [title, setTitle] = useState("");
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
 
-  const visibleTypes = types.filter((type) => `${type.label} ${type.description}`.toLowerCase().includes(query.trim().toLowerCase()));
-  const sectorDef = sectors.find((item) => item.id === sector);
-  const domains = [...(sectorDef?.domains ?? []), ...extraDomains.filter((item) => !(sectorDef?.domains ?? []).includes(item))];
-  const required = fields.filter((field) => field.required);
-  const missing = required.filter((field) => !responses[field.key]?.trim());
-  const completion = required.length ? Math.round(((required.length - missing.length) / required.length) * 100) : 0;
-  const groups = useMemo(() => {
-    const map = new Map<string, FieldOption[]>();
-    for (const field of fields) {
-      map.set(field.group, [...(map.get(field.group) ?? []), field]);
-    }
-    return [...map.entries()];
-  }, [fields]);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(TEAM_STORAGE) ?? "null") as { parties?: Party[]; linked?: string[] } | null;
+      if (saved?.parties?.length && saved.parties[0]?.email === user.email) {
+        setParties(saved.parties);
+        setLinked(new Set([user.email.toLowerCase(), ...(saved.linked ?? [])]));
+      }
+    } catch {}
+    setRestored(true);
+  }, [user.email]);
 
   useEffect(() => {
-    if (!draft || step < 4) return;
-    let cancelled = false;
-    loadFields(draft.typeId, sector || draft.sector).then((items) => {
-      if (!cancelled) setFields(items);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [draft, sector, step]);
+    if (!restored) return;
+    localStorage.setItem(TEAM_STORAGE, JSON.stringify({ parties, linked: [...linked] }));
+  }, [parties, linked, restored]);
+
+  const named = parties.filter((party) => party.name.trim() || party.organization.trim());
+  const reachable = named.slice(1).filter((party) => party.email.trim());
+  const visibleTypes = types.filter((type) => `${type.label} ${type.description}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const selectedType = types.find((type) => type.id === typeId);
 
   function run(task: () => Promise<{ ok: boolean; error?: string }>, after?: () => void) {
     setError("");
@@ -157,40 +262,112 @@ export function AgreementWizard({
     <div className="mx-auto max-w-5xl">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Nouvelle entente</h1>
-        <p className="mt-1 text-sm text-[#5e6875]">Une étape à la fois. Vous pourrez tout reprendre plus tard.</p>
+        <p className="mt-1 text-sm text-[#5e6875]">Composez l&apos;équipe, choisissez le type, écrivez ensemble, puis envoyez.</p>
       </div>
-      <ol className="mb-6 grid grid-cols-3 gap-2 sm:grid-cols-6">
-        {STEPS.map((label, index) => (
-          <li key={label} className={cn("rounded-lg border px-3 py-2 text-xs", index === step ? "border-[#1e4ed8] bg-[#eef3ff] font-medium text-[#1e4ed8]" : index < step ? "border-[#d9e4ff] bg-white text-[#1e4ed8]" : "border-[#e6e8ee] bg-white text-[#8b939e]")}>
-            {index + 1}. {label}
-          </li>
-        ))}
-      </ol>
+      <div className="mb-6">
+        <StepTrail steps={AGREEMENT_STEPS} current={step} />
+      </div>
 
       {step === 0 ? (
         <div className="space-y-4">
-          <Card className="p-5">
-            <Field label="Espace">
+          <PartySearch
+            added={parties.map((party) => party.email.toLowerCase())}
+            onAdd={(person) => {
+              addPerson(person);
+              setLinked((current) => new Set(current).add(person.email.toLowerCase()));
+            }}
+          />
+          {parties.map((party, index) => {
+            const isLinked = linked.has(party.email.toLowerCase()) && Boolean(party.email);
+            return (
+              <Card key={index} className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2">
+                <div className="flex items-center justify-between gap-2 sm:col-span-2">
+                  <p className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                    <span className="truncate">
+                      {index === 0 ? "Vous" : `Partie ${index + 1}`}
+                      {party.name && index > 0 ? ` · ${party.name}` : ""}
+                    </span>
+                    {isLinked ? (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#e8f7ee] px-2 py-0.5 text-[11px] font-medium text-[#1f7a45]"><UserCheck className="h-3 w-3" />Compte Misterdil</span>
+                    ) : party.email ? (
+                      <span className="shrink-0 rounded-full bg-[#fff6e5] px-2 py-0.5 text-[11px] font-medium text-[#8a5a00]">Sera invité à s&apos;inscrire</span>
+                    ) : null}
+                  </p>
+                  {index > 0 ? (
+                    <button type="button" onClick={() => removeParty(index)} className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-[#9f2d2d] hover:bg-[#fdf1f1]">
+                      <Trash2 className="h-3.5 w-3.5" />Retirer
+                    </button>
+                  ) : null}
+                </div>
+                <Field label="Nom"><input className={controlClass} value={party.name} onChange={(event) => updateParty(index, { name: event.target.value })} /></Field>
+                <Field label="Entreprise / organisation" hint={index === 0 && user.individual ? "Vous signez en tant que personne physique." : undefined}>
+                  <input className={controlClass} value={party.organization} onChange={(event) => updateParty(index, { organization: event.target.value })} />
+                </Field>
+                <Field label="Rôle dans l'entente">
+                  <select className={controlClass} value={party.partyType} onChange={(event) => updateParty(index, { partyType: event.target.value })}>
+                    {PARTY_TYPES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                  </select>
+                </Field>
+                <Field label="Courriel" hint={index > 0 && !party.email ? "Nécessaire pour l'inviter à participer." : undefined}>
+                  <input type="email" className={controlClass} value={party.email} readOnly={index === 0} onChange={(event) => updateParty(index, { email: event.target.value })} />
+                </Field>
+                {index > 0 ? (
+                  <Field label="Accès au document">
+                    <select className={controlClass} value={party.accessRole} onChange={(event) => updateParty(index, { accessRole: event.target.value })}>
+                      <option value="PARTICIPANT">Participant : lit, modifie et commente</option>
+                      <option value="READER">Lecteur : consultation seule</option>
+                    </select>
+                  </Field>
+                ) : null}
+                <Field label="Représentant"><input className={controlClass} value={party.representative} onChange={(event) => updateParty(index, { representative: event.target.value })} /></Field>
+                <Field label="Fonction"><input className={controlClass} value={party.jobTitle} onChange={(event) => updateParty(index, { jobTitle: event.target.value })} /></Field>
+                <Field label="Téléphone" hint="Facultatif"><input className={controlClass} value={party.phone} onChange={(event) => updateParty(index, { phone: event.target.value })} /></Field>
+                <Field label="Adresse" hint="Facultatif"><input className={controlClass} value={party.address} onChange={(event) => updateParty(index, { address: event.target.value })} /></Field>
+              </Card>
+            );
+          })}
+          <Button variant="secondary" type="button" onClick={() => setParties((current) => [...current, emptyParty()])}>
+            <Plus className="h-4 w-4" />Saisir une partie non inscrite
+          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button disabled={named.length < 2} onClick={() => { setError(""); setStep(1); }}>Continuer</Button>
+            <span className="text-sm text-[#5e6875]">
+              {named.length < 2
+                ? "Ajoutez au moins une autre partie."
+                : reachable.length < named.length - 1
+                  ? "Les parties sans courriel figureront dans l'entente, sans être invitées."
+                  : `${named.length} parties dans l'équipe.`}
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      {step === 1 ? (
+        <div className="space-y-4">
+          <Card className="grid gap-4 p-5 sm:grid-cols-2">
+            <Field label="Espace" hint={spaces.length ? "Un espace regroupe les ententes d'un même projet." : "Un premier espace sera créé automatiquement."}>
               <select className={controlClass} value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
-                {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
-                {!workspaces.length ? <option value="">Aucun espace</option> : null}
+                {spaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
+                {!spaces.length ? <option value="">Créé avec l&apos;entente</option> : null}
               </select>
             </Field>
-            <div className="mt-3 flex gap-2">
-              <input className={controlClass} value={newSpace} onChange={(event) => setNewSpace(event.target.value)} placeholder="Ou créer un espace" />
-              <Button variant="secondary" type="button" onClick={() => run(async () => {
-                const created = await createWorkspace({ name: newSpace });
-                if (!created.ok) return created;
-                setWorkspaceId(created.id);
-                setNewSpace("");
-                router.refresh();
-                return { ok: true };
-              })}>Créer</Button>
-            </div>
+            <Field label="Ou créer un espace">
+              <div className="flex gap-2">
+                <input className={controlClass} value={newSpace} onChange={(event) => setNewSpace(event.target.value)} placeholder="Nom du projet" />
+                <Button variant="secondary" type="button" disabled={newSpace.trim().length < 2} onClick={() => run(async () => {
+                  const created = await createWorkspace({ name: newSpace });
+                  if (!created.ok) return created;
+                  setSpaces((current) => [...current, { id: created.id, name: newSpace.trim() }]);
+                  setWorkspaceId(created.id);
+                  setNewSpace("");
+                  return { ok: true };
+                })}>Créer</Button>
+              </div>
+            </Field>
           </Card>
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8b939e]" />
-            <input className={`${controlClass} pl-9`} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Rechercher un type" />
+            <input className={`${controlClass} pl-9`} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Rechercher un type d'entente" />
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {visibleTypes.map((type) => {
@@ -205,18 +382,123 @@ export function AgreementWizard({
               );
             })}
           </div>
-          <Button disabled={!typeId || (!workspaceId && !workspaces.length)} onClick={() => run(async () => {
-            const created = await createDraft(workspaceId, typeId);
-            if (!created.ok) return created;
-            router.push(`/documents/nouveau?brouillon=${created.id}`);
-            return { ok: true };
-          })}>{pending ? "Création..." : "Continuer"}</Button>
+          <Field label="Titre de l'entente" hint="Facultatif. Modifiable à tout moment.">
+            <input className={controlClass} value={title} onChange={(event) => setTitle(event.target.value)} placeholder={selectedType?.label ?? "Entente"} />
+          </Field>
+          <Card className="px-5 py-4 text-sm text-[#5e6875]">
+            Les sections du type choisi sont créées vides et modifiables. Les parties sont reprises automatiquement. Rien n&apos;est envoyé avant votre confirmation.
+          </Card>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" type="button" onClick={() => setStep(0)}><ArrowLeft className="h-4 w-4" />Équipe</Button>
+            <Button disabled={!typeId || pending} onClick={() => run(async () => {
+              const created = await createAgreement({ workspaceId, typeId, title, parties });
+              if (!created.ok) return created;
+              localStorage.removeItem(TEAM_STORAGE);
+              router.push(`/documents/${created.id}`);
+              return { ok: true };
+            })}>{pending ? "Création des sections..." : "Créer l'entente"}</Button>
+          </div>
         </div>
       ) : null}
+      {error ? <p className="mt-4 text-sm text-[#9f2d2d]">{error}</p> : null}
+    </div>
+  );
 
-      {draft && step === 1 ? (
+  function updateParty(index: number, patch: Partial<Party>) {
+    setParties((current) => current.map((party, position) => (position === index ? { ...party, ...patch } : party)));
+  }
+
+  function removeParty(index: number) {
+    setParties((current) => current.filter((_, position) => position !== index));
+  }
+
+  function addPerson(person: PersonMatch) {
+    setParties((current) => {
+      if (current.some((party) => party.email.toLowerCase() === person.email)) return current;
+      const added: Party = {
+        ...emptyParty(),
+        name: person.name,
+        organization: person.organization,
+        email: person.email,
+        phone: person.phone,
+        representative: person.name,
+        jobTitle: person.jobTitle,
+      };
+      const blank = current.findIndex((party, position) => position > 0 && !party.name.trim() && !party.organization.trim() && !party.email.trim());
+      return blank >= 0 ? current.map((party, position) => (position === blank ? added : party)) : [...current, added];
+    });
+  }
+}
+
+function AssistantPrefill({ draft, sectors }: { draft: Draft; sectors: SectorOption[] }) {
+  const router = useRouter();
+  const [step, setStep] = useState(draft.brief ? 2 : draft.sector && draft.domain ? 1 : 0);
+  const [sector, setSector] = useState(draft.sector);
+  const [domain, setDomain] = useState(draft.domain);
+  const [extraDomains, setExtraDomains] = useState<string[]>(() =>
+    draft.domain && !(sectors.find((item) => item.id === draft.sector)?.domains ?? []).includes(draft.domain) ? [draft.domain] : [],
+  );
+  const [suggesting, setSuggesting] = useState(false);
+  const [domainNote, setDomainNote] = useState("");
+  const [customDomain, setCustomDomain] = useState("");
+  const [description, setDescription] = useState(draft.description);
+  const [brief, setBrief] = useState<Brief | null>(draft.brief);
+  const [editingBrief, setEditingBrief] = useState(false);
+  const [fields, setFields] = useState<FieldOption[]>([]);
+  const [responses, setResponses] = useState<Record<string, string>>(draft.responses);
+  const [title, setTitle] = useState(draft.title);
+  const [error, setError] = useState("");
+  const [pending, startTransition] = useTransition();
+
+  const sectorDef = sectors.find((item) => item.id === sector);
+  const domains = [...(sectorDef?.domains ?? []), ...extraDomains.filter((item) => !(sectorDef?.domains ?? []).includes(item))];
+  const required = fields.filter((field) => field.required);
+  const missing = required.filter((field) => !responses[field.key]?.trim());
+  const completion = required.length ? Math.round(((required.length - missing.length) / required.length) * 100) : 0;
+  const groups = useMemo(() => {
+    const map = new Map<string, FieldOption[]>();
+    for (const field of fields) map.set(field.group, [...(map.get(field.group) ?? []), field]);
+    return [...map.entries()];
+  }, [fields]);
+
+  useEffect(() => {
+    if (step < 2) return;
+    let cancelled = false;
+    loadFields(draft.typeId, sector || draft.sector).then((items) => {
+      if (!cancelled) setFields(items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.typeId, draft.sector, sector, step]);
+
+  function run(task: () => Promise<{ ok: boolean; error?: string }>, after?: () => void) {
+    setError("");
+    startTransition(async () => {
+      const result = await task();
+      if (!result.ok) setError(result.error ?? "Action impossible.");
+      else after?.();
+    });
+  }
+
+  return (
+    <div className="mx-auto max-w-5xl">
+      <Link href={`/documents/${draft.id}`} className="inline-flex items-center gap-1 text-sm text-[#1e4ed8]"><ArrowLeft className="h-4 w-4" />Retour au document</Link>
+      <div className="mb-6 mt-3">
+        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight"><Sparkles className="h-5 w-5 text-[#1e4ed8]" />Pré-remplir avec l&apos;assistant</h1>
+        <p className="mt-1 text-sm text-[#5e6875]">{draft.typeLabel} · Misterdil AI propose un premier texte pour chaque section. Vous et les parties gardez la main.</p>
+      </div>
+      {draft.hasContent ? (
+        <p className="mb-4 rounded-xl border border-[#f3d6a4] bg-[#fff8ec] p-3 text-sm text-[#7a4b0c]">
+          Le texte déjà écrit dans les sections sera remplacé par la proposition. Une version est conservée dans l&apos;historique.
+        </p>
+      ) : null}
+      <div className="mb-6">
+        <StepTrail steps={ASSISTANT_STEPS} current={step} />
+      </div>
+
+      {step === 0 ? (
         <Card className="space-y-4 p-5">
-          <p className="text-sm text-[#5e6875]">Type retenu : {draft.typeLabel}</p>
           <Field label="Secteur d'activité">
             <select className={controlClass} value={sector} onChange={(event) => { setSector(event.target.value); setDomain(""); }}>
               <option value="">Choisir</option>
@@ -229,31 +511,72 @@ export function AgreementWizard({
               {domains.map((item) => <option key={item}>{item}</option>)}
             </select>
           </Field>
-          <Button variant="secondary" type="button" disabled={!sector} onClick={() => run(async () => {
-            const result = await moreDomains(sector, domains);
-            if (!result.ok) return { ok: false, error: "Suggestion impossible." };
-            setExtraDomains((current) => [...current, ...result.domains]);
-            return { ok: true };
-          })}>Suggérer d&apos;autres domaines</Button>
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="secondary" type="button" disabled={!sector || suggesting} onClick={suggestMoreDomains}>
+                <Sparkles className="h-4 w-4" />
+                {suggesting ? "Recherche de domaines..." : "Suggérer d'autres domaines"}
+              </Button>
+              {!sector ? <span className="text-xs text-[#8b939e]">Choisissez d&apos;abord un secteur.</span> : null}
+            </div>
+            {extraDomains.length ? (
+              <div className="flex flex-wrap gap-2">
+                {extraDomains.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => setDomain(item)}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                      domain === item ? "border-[#1e4ed8] bg-[#1e4ed8] text-white" : "border-[#c9d7fb] bg-[#eef3ff] text-[#1e4ed8] hover:bg-[#dfe8ff]",
+                    )}
+                  >
+                    {domain === item ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+                    {item}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {domainNote ? <p className="text-xs text-[#5e6875]">{domainNote}</p> : null}
+            <div className="flex gap-2">
+              <input
+                className={controlClass}
+                value={customDomain}
+                onChange={(event) => setCustomDomain(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    addCustomDomain();
+                  }
+                }}
+                placeholder="Ou saisissez votre domaine"
+                disabled={!sector}
+              />
+              <Button variant="secondary" type="button" disabled={!sector || !customDomain.trim()} onClick={addCustomDomain}>Ajouter</Button>
+            </div>
+          </div>
           <div>
-            <Button disabled={!sector || !domain} onClick={() => run(() => saveContext(draft.id, sector, domain), () => setStep(2))}>Continuer</Button>
+            <Button disabled={!sector || !domain} onClick={() => run(() => saveContext(draft.id, sector, domain), () => setStep(1))}>Continuer</Button>
           </div>
         </Card>
       ) : null}
 
-      {draft && step === 2 ? (
+      {step === 1 ? (
         <Card className="space-y-4 p-5">
           <Field label="Décrivez votre projet ou votre entente en quelques phrases.">
             <textarea className={`${controlClass} min-h-32`} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Nous souhaitons conclure une entente avec une entreprise informatique pour développer une application mobile destinée à nos clients." />
           </Field>
-          <Button variant="secondary" type="button" onClick={() => run(async () => {
-            await saveDescription(draft.id, description);
-            const result = await analyzeProject(draft.id, description);
-            if (!result.ok) return result;
-            setBrief(result.understanding);
-            setEditingBrief(false);
-            return { ok: true };
-          })}>{pending ? "Analyse..." : "Analyser"}</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" type="button" onClick={() => setStep(0)}><ArrowLeft className="h-4 w-4" />Contexte</Button>
+            <Button variant="secondary" type="button" disabled={description.trim().length < 10 || pending} onClick={() => run(async () => {
+              await saveDescription(draft.id, description);
+              const result = await analyzeProject(draft.id, description);
+              if (!result.ok) return result;
+              setBrief(result.understanding);
+              setEditingBrief(false);
+              return { ok: true };
+            })}>{pending ? "Analyse..." : "Analyser"}</Button>
+          </div>
           {brief ? (
             <div className="rounded-xl border border-[#e6e8ee] bg-[#f7f8fb] p-4">
               <p className="text-sm font-medium">Ce que Misterdil a compris</p>
@@ -276,41 +599,17 @@ export function AgreementWizard({
               <p className="mt-4 text-sm">Est-ce correct ?</p>
               <div className="mt-3 flex gap-2">
                 <Button variant="secondary" type="button" onClick={() => setEditingBrief(true)}>Modifier</Button>
-                <Button type="button" onClick={() => run(() => confirmBrief(draft.id, brief), () => setStep(3))}>Confirmer</Button>
+                <Button type="button" onClick={() => run(() => confirmBrief(draft.id, brief), () => setStep(2))}>Confirmer</Button>
               </div>
             </div>
           ) : null}
         </Card>
       ) : null}
 
-      {draft && step === 3 ? (
-        <div className="space-y-4">
-          {parties.map((party, index) => (
-            <Card key={index} className="grid gap-3 p-5 sm:grid-cols-2">
-              <Field label="Nom"><input className={controlClass} value={party.name} onChange={(event) => updateParty(index, { name: event.target.value })} /></Field>
-              <Field label="Entreprise / organisation"><input className={controlClass} value={party.organization} onChange={(event) => updateParty(index, { organization: event.target.value })} /></Field>
-              <Field label="Rôle">
-                <select className={controlClass} value={party.partyType} onChange={(event) => updateParty(index, { partyType: event.target.value })}>
-                  {PARTY_TYPES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-                </select>
-              </Field>
-              <Field label="Courriel"><input className={controlClass} value={party.email} onChange={(event) => updateParty(index, { email: event.target.value })} /></Field>
-              <Field label="Téléphone" hint="Facultatif"><input className={controlClass} value={party.phone} onChange={(event) => updateParty(index, { phone: event.target.value })} /></Field>
-              <Field label="Représentant"><input className={controlClass} value={party.representative} onChange={(event) => updateParty(index, { representative: event.target.value })} /></Field>
-              <Field label="Fonction"><input className={controlClass} value={party.jobTitle} onChange={(event) => updateParty(index, { jobTitle: event.target.value })} /></Field>
-              <Field label="Adresse" hint="Facultatif"><input className={controlClass} value={party.address} onChange={(event) => updateParty(index, { address: event.target.value })} /></Field>
-            </Card>
-          ))}
-          <Button variant="secondary" type="button" onClick={() => setParties((current) => [...current, emptyParty()])}>Ajouter une partie</Button>
-          <p className="text-sm text-[#5e6875]">Modérateur : {user.name}. Vous pourrez le changer ensuite.</p>
-          <Button onClick={() => run(() => saveParties(draft.id, parties, user.id), () => setStep(4))}>Continuer</Button>
-        </div>
-      ) : null}
-
-      {draft && step >= 4 ? (
+      {step === 2 ? (
         <div className="space-y-4">
           <Card className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-            <p className="text-sm">Le formulaire est complété à {completion} %. {missing.length ? `${missing.length} information${missing.length > 1 ? "s" : ""} encore nécessaire${missing.length > 1 ? "s" : ""}.` : "Les informations essentielles sont là."}</p>
+            <p className="text-sm">Le questionnaire est complété à {completion} %. {missing.length ? `${missing.length} information${missing.length > 1 ? "s" : ""} encore nécessaire${missing.length > 1 ? "s" : ""}.` : "Les informations essentielles sont là."}</p>
             <Button disabled={!fields.length || missing.length > 0 || pending} onClick={() => run(async () => {
               const stored = await saveResponses(draft.id, responses);
               if (!stored.ok) return stored;
@@ -320,7 +619,7 @@ export function AgreementWizard({
               if (!generated.ok) return generated;
               router.push(`/documents/${draft.id}`);
               return { ok: true };
-            })}>{pending ? "Génération..." : "Générer une première version"}</Button>
+            })}>{pending ? "Rédaction..." : "Pré-remplir les sections"}</Button>
           </Card>
           <Field label="Titre du document">
             <input className={controlClass} value={title} onChange={(event) => setTitle(event.target.value)} placeholder={draft.typeLabel} />
@@ -345,7 +644,33 @@ export function AgreementWizard({
     </div>
   );
 
-  function updateParty(index: number, patch: Partial<Party>) {
-    setParties((current) => current.map((party, position) => position === index ? { ...party, ...patch } : party));
+  function suggestMoreDomains() {
+    setDomainNote("");
+    setSuggesting(true);
+    moreDomains(sector, domains)
+      .then((result) => {
+        const known = new Set(domains.map((item) => item.toLowerCase()));
+        const fresh = result.ok ? result.domains.filter((item) => !known.has(item.toLowerCase())) : [];
+        if (!result.ok) setDomainNote("La suggestion n'a pas abouti. Réessayez ou saisissez votre domaine.");
+        else if (!fresh.length) setDomainNote("Aucun nouveau domaine pour ce secteur. Saisissez le vôtre ci-dessous.");
+        else {
+          setExtraDomains((current) => [...current, ...fresh]);
+          if (!domain) setDomain(fresh[0]);
+          setDomainNote(`${fresh.length} domaine${fresh.length > 1 ? "s" : ""} ajouté${fresh.length > 1 ? "s" : ""} à la liste. Cliquez pour choisir.`);
+        }
+      })
+      .catch(() => setDomainNote("La suggestion n'a pas abouti. Réessayez ou saisissez votre domaine."))
+      .finally(() => setSuggesting(false));
+  }
+
+  function addCustomDomain() {
+    const value = customDomain.trim();
+    if (!value) return;
+    if (!domains.some((item) => item.toLowerCase() === value.toLowerCase())) {
+      setExtraDomains((current) => [...current, value]);
+    }
+    setDomain(domains.find((item) => item.toLowerCase() === value.toLowerCase()) ?? value);
+    setCustomDomain("");
+    setDomainNote("");
   }
 }

@@ -24,6 +24,10 @@ function partyBlock(party: RenderParty) {
   return lines.join("\n");
 }
 
+export function renderParties(parties: RenderParty[]) {
+  return parties.map(partyBlock).join("\n\n");
+}
+
 function relatedValue(fields: FieldDef[], responses: Record<string, string>, anchor: string) {
   return fields
     .filter((item) => item.anchor === anchor)

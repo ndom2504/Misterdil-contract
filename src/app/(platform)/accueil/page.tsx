@@ -53,6 +53,31 @@ function tasksFor(documents: DocumentSummary[]) {
     }));
 }
 
+function TasksCard({ tasks }: { tasks: ReturnType<typeof tasksFor> }) {
+  return (
+    <section className="rounded-2xl border border-[#e6eef8] bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="font-semibold text-[#10233f]">Mes tâches</h2>
+        <Link href="/documents" className="text-sm text-[#2f6fed]">Voir tout</Link>
+      </div>
+      <ul className="space-y-3">
+        {tasks.length === 0 ? <li className="text-sm text-[#6b7280]">Aucune tâche ouverte.</li> : null}
+        {tasks.map((task) => (
+          <li key={task.id}>
+            <Link href={task.href} className="flex items-start justify-between gap-3 text-sm">
+              <span className="min-w-0">
+                <span className="block font-medium text-[#10233f]">{task.title}</span>
+                <span className="block truncate text-xs text-[#6b7280]">{task.detail}</span>
+              </span>
+              {task.urgent ? <span className="shrink-0 rounded-full bg-[#fff1f0] px-2 py-0.5 text-[10px] font-medium text-[#c2410c]">Urgent</span> : null}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ microsoft?: string; message?: string; reunion?: string }> }) {
   const user = await requireUser();
   const { microsoft, message, reunion } = await searchParams;
@@ -62,23 +87,40 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+      <div className="flex min-w-0 flex-col gap-4">
+        <div className="order-1 flex flex-wrap items-start justify-between gap-3 sm:gap-4">
+          <div className="min-w-0">
             <h1 className="text-2xl font-semibold tracking-tight text-[#10233f] sm:text-3xl">Bonjour {user.name.split(" ")[0]}</h1>
             <p className="mt-1 text-sm text-[#5e6875]">Voici un aperçu de vos ententes et de vos activités.</p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <div className="rounded-2xl border border-[#e6eef8] bg-white px-4 py-3 text-sm text-[#3f4854] shadow-sm">
+            <div className="hidden rounded-2xl border border-[#e6eef8] bg-white px-4 py-3 text-sm text-[#3f4854] shadow-sm md:block">
               « Des ententes claires pour des projets qui avancent. »
             </div>
-            <div className="flex items-center gap-2 rounded-2xl border border-[#e6eef8] bg-white px-4 py-3 text-sm text-[#3f4854] shadow-sm">
+            <div className="flex items-center gap-2 rounded-full border border-[#e6eef8] bg-white px-3 py-1.5 text-xs text-[#3f4854] shadow-sm sm:rounded-2xl sm:px-4 sm:py-3 sm:text-sm">
               <Calendar className="h-4 w-4 text-[#2f6fed]" />
               <span className="capitalize">{today}</span>
             </div>
           </div>
         </div>
 
+        <div className="order-2 -mx-4 flex snap-x scroll-px-4 gap-3 overflow-x-auto px-4 pb-1 scrollbar-none sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 sm:pb-0 xl:order-3 xl:grid-cols-5">
+          {kpis.map((item) => (
+            <article key={item.key} className="min-w-[8.5rem] shrink-0 snap-start rounded-2xl border border-[#e6eef8] bg-white px-4 py-3 shadow-sm sm:min-w-0 sm:py-4">
+              <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${item.tint}`}>
+                <item.icon className="h-4 w-4" />
+              </span>
+              <p className="mt-2 text-2xl font-semibold tracking-tight text-[#10233f] sm:mt-3">{data.counts[item.key]}</p>
+              <p className="whitespace-nowrap text-xs text-[#6b7280]">{item.label}</p>
+            </article>
+          ))}
+        </div>
+
+        <div className="order-3 xl:hidden">
+          <TasksCard tasks={tasks} />
+        </div>
+
+        <div className="order-4 min-w-0 space-y-3 xl:order-2">
         <MicrosoftWindows
           mail={desk.mail}
           meetings={desk.meetings}
@@ -91,32 +133,24 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           initialMeetingId={reunion}
           documentTitles={data.documents.map((item) => item.title)}
         />
-
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          {kpis.map((item) => (
-            <article key={item.key} className="rounded-2xl border border-[#e6eef8] bg-white px-4 py-4 shadow-sm">
-              <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${item.tint}`}>
-                <item.icon className="h-4 w-4" />
-              </span>
-              <p className="mt-3 text-2xl font-semibold tracking-tight text-[#10233f]">{data.counts[item.key]}</p>
-              <p className="text-xs text-[#6b7280]">{item.label}</p>
-            </article>
-          ))}
         </div>
 
-        <section className="overflow-hidden rounded-2xl border border-[#e6eef8] bg-white shadow-sm">
-          <div className="flex items-center justify-between px-5 py-4">
+        <section className="order-5 overflow-hidden rounded-2xl border border-[#e6eef8] bg-white shadow-sm">
+          <div className="flex items-center justify-between px-4 py-4 sm:px-5">
             <h2 className="font-semibold text-[#10233f]">Mes documents récents</h2>
             <Link href="/documents" className="text-sm text-[#2f6fed]">Voir tout</Link>
           </div>
           <DocumentTable documents={data.documents} />
         </section>
 
-        <section className="rounded-2xl border border-[#e6eef8] bg-white p-5 shadow-sm">
+        <section className="order-6 rounded-2xl border border-[#e6eef8] bg-white p-4 shadow-sm sm:p-5">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-semibold text-[#10233f]">Mes espaces</h2>
             <Link href="/espaces" className="text-sm text-[#2f6fed]">Voir tout</Link>
           </div>
+          {workspaces.length === 0 ? (
+            <p className="text-sm text-[#6b7280]">Aucun espace pour le moment. <Link href="/documents/nouveau" className="font-medium text-[#2f6fed]">Créez votre première entente</Link> pour en ouvrir un.</p>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {workspaces.slice(0, 3).map((workspace) => (
               <Link key={workspace.id} href={`/espaces/${workspace.id}`} className="overflow-hidden rounded-2xl border border-[#eef2f7] hover:border-[#c9d7fb]">
@@ -134,7 +168,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </section>
       </div>
 
-      <aside className="space-y-4">
+      <aside className="min-w-0 space-y-4">
         <section className="rounded-2xl bg-[#12306b] p-4 text-white shadow-sm">
           <div className="mb-3 flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-[#9ec1ff]" />
@@ -146,26 +180,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </div>
         </section>
 
-        <section className="rounded-2xl border border-[#e6eef8] bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold text-[#10233f]">Mes tâches</h2>
-            <Link href="/documents" className="text-sm text-[#2f6fed]">Voir tout</Link>
-          </div>
-          <ul className="space-y-3">
-            {tasks.length === 0 ? <li className="text-sm text-[#6b7280]">Aucune tâche ouverte.</li> : null}
-            {tasks.map((task) => (
-              <li key={task.id}>
-                <Link href={task.href} className="flex items-start justify-between gap-3 text-sm">
-                  <span>
-                    <span className="block font-medium text-[#10233f]">{task.title}</span>
-                    <span className="block text-xs text-[#6b7280]">{task.detail}</span>
-                  </span>
-                  {task.urgent ? <span className="rounded-full bg-[#fff1f0] px-2 py-0.5 text-[10px] font-medium text-[#c2410c]">Urgent</span> : null}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <div className="hidden xl:block">
+          <TasksCard tasks={tasks} />
+        </div>
 
         <section className="rounded-2xl border border-[#e6eef8] bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">

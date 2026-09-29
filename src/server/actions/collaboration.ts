@@ -6,19 +6,8 @@ import { prisma } from "@/server/db";
 import { requireUser } from "@/server/current-user";
 import { loadDocumentForUser } from "@/server/guard";
 import { notifyUser, recordActivity, saveVersion, touchDocument } from "@/server/journal";
+import { cleanParties, pendingInvitationLinks, replaceStakeholders, shareDocument, type PartyInput } from "@/server/sharing";
 import { internalSignatureProvider } from "@/server/signature";
-
-type PartyInput = {
-  name: string;
-  organization: string;
-  partyType: string;
-  email: string;
-  phone: string;
-  representative: string;
-  jobTitle: string;
-  address: string;
-  accessRole: string;
-};
 
 async function context(documentId: string) {
   const user = await requireUser();
@@ -50,88 +39,13 @@ export async function saveParties(documentId: string, parties: PartyInput[], mod
   if (loaded.document.signatures.length) {
     return { ok: false as const, error: "Les parties sont figées après l'envoi en signature." };
   }
-  const cleaned = parties
-    .map((party) => ({
-      ...party,
-      name: party.name.trim(),
-      organization: party.organization.trim(),
-      email: party.email.trim().toLowerCase(),
-      phone: party.phone.trim(),
-      representative: party.representative.trim(),
-      jobTitle: party.jobTitle.trim(),
-      address: party.address.trim(),
-    }))
-    .filter((party) => party.name || party.organization);
+  const cleaned = cleanParties(parties);
   if (!cleaned.length) return { ok: false as const, error: "Ajoutez au moins une partie." };
 
-  const previous = new Set(loaded.document.stakeholders.map((item) => item.email.toLowerCase()));
-  await prisma.stakeholder.deleteMany({ where: { documentId } });
-
-  for (const party of cleaned) {
-    const existing = party.email ? await prisma.user.findUnique({ where: { email: party.email } }) : null;
-    await prisma.stakeholder.create({
-      data: {
-        documentId,
-        userId: existing?.id,
-        name: party.name || party.organization,
-        organization: party.organization,
-        partyType: party.partyType || "OTHER",
-        email: party.email,
-        phone: party.phone,
-        representative: party.representative,
-        jobTitle: party.jobTitle,
-        address: party.address,
-        accessRole: party.accessRole || "PARTICIPANT",
-      },
-    });
-
-    if (existing) {
-      await prisma.workspaceMember.upsert({
-        where: { workspaceId_userId: { workspaceId: loaded.document.workspaceId, userId: existing.id } },
-        update: {},
-        create: {
-          workspaceId: loaded.document.workspaceId,
-          userId: existing.id,
-          role: party.accessRole === "READER" ? "READER" : party.accessRole === "MODERATOR" ? "MODERATOR" : "PARTICIPANT",
-        },
-      });
-      if (existing.id !== user.id && !previous.has(party.email)) {
-        await notifyUser({
-          userId: existing.id,
-          kind: "INVITE",
-          title: "Invitation à une entente",
-          body: `${user.name} vous a ajouté à « ${loaded.document.title} ».`,
-          href: `/documents/${documentId}`,
-        });
-        await recordActivity({
-          workspaceId: loaded.document.workspaceId,
-          documentId,
-          actorId: user.id,
-          actorName: user.name,
-          kind: "INVITE",
-          message: `${existing.name} a rejoint « ${loaded.document.title} ».`,
-        });
-      }
-    } else if (party.email && !previous.has(party.email)) {
-      await prisma.invitation.create({
-        data: {
-          email: party.email,
-          workspaceId: loaded.document.workspaceId,
-          role: party.accessRole === "READER" ? "READER" : "PARTICIPANT",
-          documentId,
-          invitedById: user.id,
-        },
-      });
-      await recordActivity({
-        workspaceId: loaded.document.workspaceId,
-        documentId,
-        actorId: user.id,
-        actorName: user.name,
-        kind: "INVITE",
-        message: `${user.name} a invité ${party.email}. Le courriel partira lorsque la messagerie sera connectée.`,
-      });
-    }
-  }
+  await replaceStakeholders(documentId, cleaned);
+  const shared = loaded.document.sentAt
+    ? await shareDocument(documentId, { id: user.id, name: user.name, organization: user.organization?.name ?? "" })
+    : [];
 
   const moderator = moderatorId
     ? await prisma.workspaceMember.findUnique({
@@ -146,7 +60,35 @@ export async function saveParties(documentId: string, parties: PartyInput[], mod
     },
   });
   touchDocument(documentId);
-  return { ok: true as const };
+  return { ok: true as const, shared };
+}
+
+export async function sendToMembers(documentId: string) {
+  const { user, loaded } = await context(documentId);
+  if (!loaded?.access.canInvite) return { ok: false as const, error: "Seul le modérateur peut envoyer l'entente." };
+  const others = loaded.document.stakeholders.filter((party) => party.userId !== user.id && (party.userId || party.email));
+  if (!others.length) {
+    return { ok: false as const, error: "Ajoutez au moins une autre partie avec un courriel pour envoyer l'entente." };
+  }
+
+  const shared = await shareDocument(documentId, { id: user.id, name: user.name, organization: user.organization?.name ?? "" });
+  if (!loaded.document.sentAt) {
+    await prisma.document.update({
+      where: { id: documentId },
+      data: {
+        sentAt: new Date(),
+        ...(loaded.document.status === "DRAFT" ? { status: "IN_DISCUSSION" } : {}),
+      },
+    });
+  }
+  touchDocument(documentId);
+  return { ok: true as const, shared, links: await pendingInvitationLinks(documentId) };
+}
+
+export async function invitationLinks(documentId: string) {
+  const { loaded } = await context(documentId);
+  if (!loaded?.access.canInvite) return [];
+  return pendingInvitationLinks(documentId);
 }
 
 export async function addComment(documentId: string, input: { discussionId?: string; sectionId?: string; body: string }) {

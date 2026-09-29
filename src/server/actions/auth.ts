@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { PROFILE_TYPES } from "@/lib/domain";
+import { cleanNext, onboardingPath } from "@/lib/next-path";
 import { prisma } from "@/server/db";
 import { requireUser } from "@/server/current-user";
 import { acceptInvitations } from "@/server/invitations";
@@ -9,11 +9,6 @@ import { hashPassword, verifyPassword } from "@/server/password";
 import { clearSession, createSession } from "@/server/session";
 
 export type FormState = { error?: string };
-
-function cleanNext(value: string) {
-  if (value.startsWith("/") && !value.startsWith("//")) return value;
-  return "/accueil";
-}
 
 export async function register(_state: FormState, formData: FormData): Promise<FormState> {
   const name = String(formData.get("name") ?? "").trim();
@@ -24,6 +19,8 @@ export async function register(_state: FormState, formData: FormData): Promise<F
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Indiquez un courriel valide." };
   if (password.length < 8) return { error: "Le mot de passe doit contenir au moins 8 caractères." };
 
+  const next = String(formData.get("suivant") ?? "");
+
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return { error: "Un compte existe déjà avec ce courriel." };
 
@@ -32,7 +29,7 @@ export async function register(_state: FormState, formData: FormData): Promise<F
   });
   await acceptInvitations(user.id, email);
   await createSession(user.id);
-  redirect("/onboarding");
+  redirect(onboardingPath(next));
 }
 
 export async function login(_state: FormState, formData: FormData): Promise<FormState> {
@@ -46,8 +43,9 @@ export async function login(_state: FormState, formData: FormData): Promise<Form
   }
 
   const remember = formData.get("remember") === "1";
+  await acceptInvitations(user.id, user.email);
   await createSession(user.id, remember ? 30 : 1);
-  redirect(user.onboarded ? next : "/onboarding");
+  redirect(user.onboarded ? next : onboardingPath(next));
 }
 
 export async function logout() {
@@ -57,38 +55,47 @@ export async function logout() {
 
 export async function completeOnboarding(_state: FormState, formData: FormData): Promise<FormState> {
   const user = await requireUser();
+  const kind = formData.get("kind") === "INDIVIDUAL" ? "INDIVIDUAL" : "ORGANIZATION";
+  const name = String(formData.get("name") ?? "").trim();
   const organizationName = String(formData.get("organization") ?? "").trim();
-  const profileType = String(formData.get("profileType") ?? "").trim();
   const jobTitle = String(formData.get("jobTitle") ?? "").trim();
-  const workspaceName = String(formData.get("workspace") ?? "").trim();
   const sector = String(formData.get("sector") ?? "").trim();
+  const address = String(formData.get("address") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
+  const next = String(formData.get("suivant") ?? "");
 
-  if (organizationName.length < 2) return { error: "Indiquez le nom de votre organisation." };
-  if (!PROFILE_TYPES.includes(profileType as (typeof PROFILE_TYPES)[number])) {
-    return { error: "Choisissez un profil." };
+  if (name.length < 2) return { error: "Indiquez votre nom complet." };
+  if (kind === "ORGANIZATION" && organizationName.length < 2) {
+    return { error: "Indiquez le nom de votre organisation." };
   }
-  if (workspaceName.length < 2) return { error: "Donnez un nom à votre premier espace." };
 
-  const organization = await prisma.organization.create({
-    data: { name: organizationName, sector, ownerId: user.id },
+  const profile = {
+    name: kind === "INDIVIDUAL" ? name : organizationName,
+    kind,
+    sector: kind === "INDIVIDUAL" ? "" : sector,
+    address,
+    phone,
+  };
+  await prisma.$transaction(async (tx) => {
+    const organization = user.organization
+      ? await tx.organization.update({ where: { id: user.organization.id }, data: profile })
+      : await tx.organization.create({ data: { ...profile, ownerId: user.id } });
+    await tx.user.update({
+      where: { id: user.id },
+      data: {
+        name,
+        phone,
+        jobTitle: kind === "INDIVIDUAL" ? "" : jobTitle,
+        profileType: kind === "INDIVIDUAL" ? "Personne physique" : "Organisation",
+        organizationId: organization.id,
+        onboarded: true,
+      },
+    });
   });
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { organizationId: organization.id, profileType, jobTitle, onboarded: true },
-  });
-  const workspace = await prisma.workspace.create({
-    data: {
-      organizationId: organization.id,
-      name: workspaceName,
-      sector,
-      createdById: user.id,
-      description: "",
-    },
-  });
-  await prisma.workspaceMember.create({
-    data: { workspaceId: workspace.id, userId: user.id, role: "CREATOR" },
-  });
-  redirect("/documents/nouveau");
+
+  if (next) redirect(cleanNext(next));
+  const memberships = await prisma.workspaceMember.count({ where: { userId: user.id } });
+  redirect(memberships ? "/accueil" : "/documents/nouveau");
 }
 
 export async function updateProfile(_state: FormState, formData: FormData): Promise<FormState> {

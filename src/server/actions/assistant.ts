@@ -52,8 +52,12 @@ export async function analyzeProject(documentId: string, description: string) {
 
 export async function moreDomains(sectorId: string, current: string[]) {
   await requireUser();
-  const domains = await suggestDomains(sectorId, current);
-  return { ok: true as const, domains };
+  try {
+    const domains = await suggestDomains(sectorId, current.slice(0, 40));
+    return { ok: true as const, domains };
+  } catch {
+    return { ok: false as const, domains: [] as string[] };
+  }
 }
 
 export async function markNotificationsRead() {

@@ -4,6 +4,7 @@ import { resolveAccess } from "@/server/access";
 import type { SessionUser } from "@/server/current-user";
 import { prisma } from "@/server/db";
 import { loadDocumentForUser } from "@/server/guard";
+import { pendingInvitationLinks } from "@/server/sharing";
 
 function iso(value: Date) {
   return value.toISOString();
@@ -66,6 +67,7 @@ export async function listDocuments(user: SessionUser): Promise<DocumentSummary[
         stakeholderRole: stakeholder?.accessRole ?? null,
         isStakeholder: Boolean(stakeholder),
         isDocumentModerator: document.moderatorId === user.id,
+        sent: Boolean(document.sentAt),
       });
       if (!access) continue;
       const sector = sectorById(document.sector);
@@ -161,6 +163,7 @@ export async function listWorkspaces(user: SessionUser) {
         stakeholderRole: stakeholder?.accessRole ?? null,
         isStakeholder: Boolean(stakeholder),
         isDocumentModerator: document.moderatorId === user.id,
+        sent: Boolean(document.sentAt),
       });
     });
     const sections = visible.flatMap((document) => document.sections);
@@ -213,6 +216,7 @@ export async function getWorkspace(user: SessionUser, workspaceId: string) {
       stakeholderRole: stakeholder?.accessRole ?? null,
       isStakeholder: Boolean(stakeholder),
       isDocumentModerator: document.moderatorId === user.id,
+      sent: Boolean(document.sentAt),
     });
   });
 
@@ -261,6 +265,7 @@ function responseMap(responses: { fieldKey: string; value: string }[]) {
 }
 
 export async function getDocumentView(user: SessionUser, documentId: string) {
+  const loadedAt = new Date();
   const loaded = await loadDocumentForUser(documentId, user);
   if (!loaded) return null;
   const { document, access } = loaded;
@@ -288,6 +293,7 @@ export async function getDocumentView(user: SessionUser, documentId: string) {
       stakeholderRole: stakeholder?.accessRole ?? null,
       isStakeholder: Boolean(stakeholder),
       isDocumentModerator: spec.moderatorId === user.id,
+      sent: Boolean(spec.sentAt),
     });
     if (specAccess) linkedSpec = { id: spec.id, title: spec.title };
   }
@@ -314,6 +320,10 @@ export async function getDocumentView(user: SessionUser, documentId: string) {
     workspaceName: document.workspace.name,
     moderatorId: document.moderatorId,
     moderatorName: document.moderator?.name ?? "Non désigné",
+    currentUserId: user.id,
+    loadedAt: iso(loadedAt),
+    sentAt: document.sentAt ? iso(document.sentAt) : null,
+    invitationLinks: access.canInvite ? await pendingInvitationLinks(document.id) : [],
     updatedAt: iso(document.updatedAt),
     progress: progressFromSections(document.sections),
     missing,
@@ -322,6 +332,7 @@ export async function getDocumentView(user: SessionUser, documentId: string) {
     partiesApproved: finalApprovals.length > 0 && finalApprovals.every((item) => item.status === "APPROVED"),
     access: {
       canEdit: access.canEdit,
+      canWrite: access.canWrite,
       canComment: access.canComment,
       canPropose: access.canPropose,
       canValidate: access.canValidate,
@@ -337,6 +348,9 @@ export async function getDocumentView(user: SessionUser, documentId: string) {
       content: section.content,
       status: section.status,
       position: section.position,
+      updatedAt: iso(section.updatedAt),
+      updatedById: section.updatedById,
+      updatedByName: section.updatedByName,
     })),
     stakeholders: document.stakeholders.map((item) => ({
       id: item.id,
@@ -350,6 +364,7 @@ export async function getDocumentView(user: SessionUser, documentId: string) {
       jobTitle: item.jobTitle,
       address: item.address,
       accessRole: item.accessRole,
+      invitedAt: item.invitedAt ? iso(item.invitedAt) : null,
       isCurrentUser: item.userId === user.id || item.email.toLowerCase() === user.email.toLowerCase(),
     })),
     discussions: document.discussions.map((discussion) => ({

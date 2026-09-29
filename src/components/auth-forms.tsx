@@ -20,12 +20,16 @@ function MicrosoftMark() {
   );
 }
 
-function MicrosoftButton() {
+function withNext(path: string, next?: string) {
+  return next && next !== "/accueil" ? `${path}?suivant=${encodeURIComponent(next)}` : path;
+}
+
+export function MicrosoftButton({ next }: { next?: string }) {
   return (
     <div>
       <p className="text-center text-xs text-[#8b939e]">Continuer avec</p>
       <a
-        href="/api/auth/microsoft"
+        href={withNext("/api/auth/microsoft", next)}
         className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#e6e8ee] bg-white text-sm font-medium text-[#12151a] hover:bg-[#f7f8fb]"
       >
         <MicrosoftMark />
@@ -84,10 +88,10 @@ export function LoginForm({ next = "/accueil", notice }: { next?: string; notice
         </button>
       </form>
       <div className="mt-5">
-        <MicrosoftButton />
+        <MicrosoftButton next={next} />
       </div>
       <p className="mt-5 text-center text-sm text-[#5e6875]">
-        Vous n&apos;avez pas de compte ? <Link href="/inscription" className="font-medium text-[#2f7cf6]">Créer un compte</Link>
+        Vous n&apos;avez pas de compte ? <Link href={withNext("/inscription", next)} className="font-medium text-[#2f7cf6]">Créer un compte</Link>
       </p>
       <div className="mt-5 flex gap-3 rounded-2xl bg-[#f4f8ff] p-4 text-sm text-[#3f4854]">
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#2f7cf6]" />
@@ -97,7 +101,7 @@ export function LoginForm({ next = "/accueil", notice }: { next?: string; notice
   );
 }
 
-export function RegisterForm() {
+export function RegisterForm({ next, email, invitedBy }: { next?: string; email?: string; invitedBy?: string }) {
   const [state, action, pending] = useActionState(register, initial);
   const [visible, setVisible] = useState(false);
 
@@ -106,9 +110,12 @@ export function RegisterForm() {
       <div className="flex flex-col items-center text-center">
         <Logo stack />
         <h2 className="mt-5 text-xl font-semibold">Créer un compte</h2>
-        <p className="mt-1 max-w-xs text-sm leading-5 text-[#5e6875]">Ouvrez votre espace, puis votre première entente.</p>
+        <p className="mt-1 max-w-xs text-sm leading-5 text-[#5e6875]">
+          {invitedBy ? `${invitedBy} vous invite. Créez votre compte pour participer à l'entente.` : "Ouvrez votre espace, puis votre première entente."}
+        </p>
       </div>
       <form action={action} className="mt-6 space-y-4">
+        <input type="hidden" name="suivant" value={next ?? ""} />
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium">Nom</span>
           <input name="name" required autoComplete="name" placeholder="Votre nom" className="h-11 w-full rounded-xl border border-[#e1e4ea] px-3 text-sm outline-none focus:border-[#2f7cf6] focus:ring-2 focus:ring-[#d9e4ff]" />
@@ -117,7 +124,7 @@ export function RegisterForm() {
           <span className="mb-1.5 block text-sm font-medium">Adresse courriel</span>
           <span className="relative block">
             <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#98a0ab]" />
-            <input name="email" type="email" required autoComplete="email" placeholder="votre@entreprise.com" className="h-11 w-full rounded-xl border border-[#e1e4ea] pl-10 pr-3 text-sm outline-none focus:border-[#2f7cf6] focus:ring-2 focus:ring-[#d9e4ff]" />
+            <input name="email" type="email" required autoComplete="email" defaultValue={email} placeholder="votre@entreprise.com" className="h-11 w-full rounded-xl border border-[#e1e4ea] pl-10 pr-3 text-sm outline-none focus:border-[#2f7cf6] focus:ring-2 focus:ring-[#d9e4ff]" />
           </span>
         </label>
         <label className="block">
@@ -136,10 +143,10 @@ export function RegisterForm() {
         </button>
       </form>
       <div className="mt-5">
-        <MicrosoftButton />
+        <MicrosoftButton next={next} />
       </div>
       <p className="mt-5 text-center text-sm text-[#5e6875]">
-        Déjà un compte ? <Link href="/connexion" className="font-medium text-[#2f7cf6]">Se connecter</Link>
+        Déjà un compte ? <Link href={withNext("/connexion", next)} className="font-medium text-[#2f7cf6]">Se connecter</Link>
       </p>
     </div>
   );

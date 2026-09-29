@@ -10,7 +10,7 @@ export type SessionUser = {
   jobTitle: string;
   profileType: string;
   onboarded: boolean;
-  organization: { id: string; name: string; sector: string } | null;
+  organization: { id: string; name: string; sector: string; kind: string; address: string; phone: string } | null;
 };
 
 export async function getCurrentUser(): Promise<SessionUser | null> {
@@ -36,6 +36,9 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
           id: user.organization.id,
           name: user.organization.name,
           sector: user.organization.sector ?? "",
+          kind: user.organization.kind,
+          address: user.organization.address,
+          phone: user.organization.phone,
         }
       : null,
   };

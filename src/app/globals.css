@@ -9,9 +9,19 @@ body {
   color: #12151a;
 }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #d5d8e0 transparent;
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #d5d8e0 transparent;
+  }
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 ::selection {

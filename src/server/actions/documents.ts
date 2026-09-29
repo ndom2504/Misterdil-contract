@@ -3,9 +3,10 @@
 import { documentTypeById, fieldVisible, sectorById, type BlueprintSection, type FieldDef } from "@/lib/catalog";
 import { prisma } from "@/server/db";
 import { requireUser } from "@/server/current-user";
-import { renderDocument, suggestedTitle } from "@/server/document-render";
+import { renderDocument, renderParties, suggestedTitle } from "@/server/document-render";
 import { loadDocumentForUser } from "@/server/guard";
 import { recordActivity, saveVersion, touchDocument } from "@/server/journal";
+import { cleanParties, replaceStakeholders, type PartyInput } from "@/server/sharing";
 
 async function editable(documentId: string) {
   const user = await requireUser();
@@ -88,6 +89,87 @@ export async function createDraft(workspaceId: string, typeId: string) {
     actorName: user.name,
     kind: "CREATE",
     message: `${user.name} a créé « ${document.title} ».`,
+  });
+  touchDocument(document.id);
+  return { ok: true as const, id: document.id };
+}
+
+// New flow: the team is chosen first, then the type. The document starts with the
+// type's sections, all empty except the parties, ready to be written together.
+export async function createAgreement(input: { workspaceId: string; typeId: string; title: string; parties: PartyInput[] }) {
+  const user = await requireUser();
+  if (!user.organization) return { ok: false as const, error: "Complétez d'abord votre profil." };
+  const parties = cleanParties(input.parties);
+  if (!parties.length) return { ok: false as const, error: "Ajoutez au moins une partie." };
+  const type = await prisma.documentType.findUnique({ where: { id: input.typeId } });
+  const fallback = documentTypeById(input.typeId);
+  if (!type && !fallback) return { ok: false as const, error: "Type d'entente inconnu." };
+  const blueprint: BlueprintSection[] = type ? (JSON.parse(type.blueprint) as BlueprintSection[]) : fallback?.blueprint ?? [];
+  if (!blueprint.length) return { ok: false as const, error: "Aucune structure n'est disponible pour ce type." };
+
+  let workspaceId = input.workspaceId;
+  if (workspaceId) {
+    const membership = await prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId: user.id } },
+    });
+    if (!membership || !["ADMINISTRATOR", "CREATOR", "MODERATOR"].includes(membership.role)) {
+      return { ok: false as const, error: "Vous ne pouvez pas créer d'entente dans cet espace." };
+    }
+  } else {
+    const workspace = await prisma.workspace.create({
+      data: {
+        organizationId: user.organization.id,
+        name: user.organization.kind === "INDIVIDUAL" ? "Mes ententes" : `Ententes ${user.organization.name}`,
+        createdById: user.id,
+        members: { create: { userId: user.id, role: "CREATOR" } },
+      },
+    });
+    workspaceId = workspace.id;
+  }
+
+  const title = input.title.trim() || type?.label || fallback?.label || "Entente";
+  const document = await prisma.document.create({
+    data: {
+      workspaceId,
+      typeId: input.typeId,
+      title,
+      createdById: user.id,
+      moderatorId: user.id,
+      status: "DRAFT",
+      wizardStep: 6,
+    },
+  });
+  const partiesText = renderParties(parties);
+  const sections = blueprint.map((section, index) => ({
+    documentId: document.id,
+    anchor: section.anchor,
+    title: section.title,
+    content: section.anchor === "parties" ? partiesText : "",
+    status: section.anchor === "parties" ? "IN_PREPARATION" : "NOT_STARTED",
+    position: index + 1,
+    updatedById: user.id,
+    updatedByName: user.name,
+  }));
+  try {
+    await replaceStakeholders(document.id, parties);
+    await prisma.documentSection.createMany({ data: sections });
+  } catch (error) {
+    await prisma.document.delete({ where: { id: document.id } }).catch(() => {});
+    throw error;
+  }
+  await saveVersion({
+    documentId: document.id,
+    label: "Structure initiale",
+    createdByName: user.name,
+    sections: sections.map(({ anchor, title: sectionTitle, content, status, position }) => ({ anchor, title: sectionTitle, content, status, position })),
+  });
+  await recordActivity({
+    workspaceId,
+    documentId: document.id,
+    actorId: user.id,
+    actorName: user.name,
+    kind: "CREATE",
+    message: `${user.name} a créé « ${title} » avec ${parties.length} partie${parties.length > 1 ? "s" : ""}.`,
   });
   touchDocument(document.id);
   return { ok: true as const, id: document.id };
@@ -218,11 +300,13 @@ export async function generateDocument(documentId: string, title: string) {
       content: section.content,
       status: "IN_PREPARATION",
       position: index + 1,
+      updatedById: user.id,
+      updatedByName: "Misterdil AI",
     })),
   });
   await prisma.document.update({
     where: { id: documentId },
-    data: { title: finalTitle, status: "IN_DISCUSSION", wizardStep: 6 },
+    data: { title: finalTitle, status: loaded.document.sentAt ? "IN_DISCUSSION" : "DRAFT", wizardStep: 6 },
   });
   await saveVersion({
     documentId,
@@ -248,15 +332,45 @@ export async function generateDocument(documentId: string, title: string) {
   return { ok: true as const };
 }
 
-export async function updateSectionContent(documentId: string, sectionId: string, content: string, log: boolean) {
+export async function updateSectionContent(
+  documentId: string,
+  sectionId: string,
+  content: string,
+  log: boolean,
+  expectedUpdatedAt?: string,
+) {
   const { user, loaded } = await editable(documentId);
-  if (!loaded?.access.canEdit) return { ok: false as const, error: "Seul le modérateur peut modifier le texte." };
+  if (!loaded?.access.canWrite) return { ok: false as const, error: "Votre accès est en lecture seule." };
   const section = loaded.document.sections.find((item) => item.id === sectionId);
   if (!section) return { ok: false as const, error: "Section introuvable." };
   if (section.status === "LOCKED") return { ok: false as const, error: "Cette section est verrouillée." };
-  if (section.content === content) return { ok: true as const };
+  if (section.content === content) return { ok: true as const, updatedAt: section.updatedAt.toISOString() };
 
-  await prisma.documentSection.update({ where: { id: sectionId }, data: { content } });
+  // Another participant saved this section since the editor loaded it: refuse to overwrite.
+  if (
+    expectedUpdatedAt &&
+    section.updatedById &&
+    section.updatedById !== user.id &&
+    section.updatedAt.getTime() > new Date(expectedUpdatedAt).getTime()
+  ) {
+    return {
+      ok: false as const,
+      conflict: true as const,
+      error: `${section.updatedByName || "Un participant"} vient de modifier cette section.`,
+      content: section.content,
+      updatedAt: section.updatedAt.toISOString(),
+    };
+  }
+
+  const saved = await prisma.documentSection.update({
+    where: { id: sectionId },
+    data: {
+      content,
+      updatedById: user.id,
+      updatedByName: user.name,
+      status: section.status === "NOT_STARTED" && content.trim() ? "IN_PREPARATION" : section.status,
+    },
+  });
   await prisma.document.update({ where: { id: documentId }, data: { updatedAt: new Date() } });
   if (log) {
     await saveVersion({
@@ -279,9 +393,9 @@ export async function updateSectionContent(documentId: string, sectionId: string
       kind: "EDIT",
       message: `${user.name} a modifié l'article « ${section.title} ».`,
     });
+    touchDocument(documentId);
   }
-  touchDocument(documentId);
-  return { ok: true as const };
+  return { ok: true as const, updatedAt: saved.updatedAt.toISOString() };
 }
 
 export async function setSectionStatus(documentId: string, sectionId: string, status: string) {

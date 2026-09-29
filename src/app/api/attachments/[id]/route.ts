@@ -1,8 +1,7 @@
-import { readFile } from "fs/promises";
-import path from "path";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/server/current-user";
 import { prisma } from "@/server/db";
+import { openFile } from "@/server/storage";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
@@ -18,11 +17,14 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   if (!membership) return NextResponse.json({ error: "Fichier introuvable." }, { status: 404 });
   if (!file.storagePath) return NextResponse.json({ error: "Fichier indisponible." }, { status: 404 });
 
-  const buffer = await readFile(path.join(process.cwd(), "data", "uploads", file.storagePath));
-  return new NextResponse(buffer, {
+  const body = await openFile(file.storagePath);
+  if (!body) return NextResponse.json({ error: "Fichier indisponible." }, { status: 404 });
+  return new NextResponse(body, {
     headers: {
       "Content-Type": file.mimeType,
-      "Content-Disposition": `attachment; filename="${file.name.replace(/"/g, "")}"`,
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, no-store",
     },
   });
 }

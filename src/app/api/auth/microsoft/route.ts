@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cleanNext } from "@/lib/next-path";
 import { createMicrosoftProof, microsoftAuthorizeUrl } from "@/server/microsoft";
 import { readSessionUserId } from "@/server/session";
 
@@ -8,9 +9,10 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL(`${page}?microsoft=configuration`, request.url));
   }
   const proof = createMicrosoftProof();
-  const origin = new URL(request.url).origin;
-  const response = NextResponse.redirect(microsoftAuthorizeUrl(origin, proof.state, proof.verifier));
-  response.cookies.set("misterdil_ms_proof", JSON.stringify(proof), {
+  const url = new URL(request.url);
+  const next = cleanNext(url.searchParams.get("suivant") ?? "", "");
+  const response = NextResponse.redirect(microsoftAuthorizeUrl(url.origin, proof.state, proof.verifier));
+  response.cookies.set("misterdil_ms_proof", JSON.stringify({ ...proof, next }), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",

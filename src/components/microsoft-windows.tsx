@@ -2,7 +2,7 @@
 
 import { useState, useTransition, type PointerEvent as ReactPointerEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, CalendarPlus, Check, Mail, Maximize2, Minimize2, MoreHorizontal, Reply, Search, Video, X } from "lucide-react";
+import { Archive, ArrowLeft, CalendarPlus, Check, Mail, Maximize2, Minimize2, MoreHorizontal, Reply, Search, Video, X } from "lucide-react";
 import { MICROSOFT_NOTICES as notices, type MailWindow, type MeetingWindow } from "@/lib/microsoft-desk";
 import { outlookAction } from "@/server/actions/microsoft";
 
@@ -87,7 +87,7 @@ export function MicrosoftWindows({
       {notice === "ok" && connected ? <p className="text-sm text-[#14804a]">{notices.ok}</p> : null}
       {banner ? <p className="text-sm text-[#9f2d2d]">{banner}</p> : null}
       <div className="flex flex-wrap items-start gap-4">
-        <section className="relative flex min-h-[280px] w-full min-w-[300px] flex-col overflow-hidden rounded-2xl border border-[#d7e4f5] bg-white shadow-md xl:w-[calc(50%-0.5rem)]">
+        <section className="relative flex max-h-[30rem] min-h-[280px] w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-[#d7e4f5] bg-white shadow-md sm:max-h-none sm:min-w-[300px] xl:w-[calc(50%-0.5rem)]">
           <DeskHeader tint="from-[#0f6cbd] to-[#3aa0f5]" icon={<Mail className="h-4 w-4" />} title="Outlook" subtitle="Vos courriels récents et importants" onExpand={() => setExpanded("outlook")}>
             {connected ? (
               <>
@@ -129,14 +129,14 @@ export function MicrosoftWindows({
           <ResizeGrip />
         </section>
 
-        <section className="relative flex min-h-[280px] w-full min-w-[300px] flex-col overflow-hidden rounded-2xl border border-[#dddff5] bg-white shadow-md xl:w-[calc(50%-0.5rem)]">
+        <section className="relative flex max-h-[30rem] min-h-[280px] w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-[#dddff5] bg-white shadow-md sm:max-h-none sm:min-w-[300px] xl:w-[calc(50%-0.5rem)]">
           <DeskHeader tint="from-[#5b5fc7] to-[#7b83eb]" icon={<Video className="h-4 w-4" />} title="Teams" subtitle="Vos réunions et activités d'équipe" onExpand={() => setExpanded("teams")}>
             {connected ? <a href="https://teams.microsoft.com/" target="_blank" rel="noreferrer" className="rounded-full bg-white px-3 py-1 text-xs font-medium text-[#5b5fc7]">Ouvrir Teams</a> : null}
           </DeskHeader>
           <div className="min-h-0 flex-1 overflow-y-auto">
           <ConnectState connected={connected} configured={configured} message={error} empty={false} emptyLabel="">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#f2f5f9] px-3 py-2">
-              <div className="flex flex-wrap gap-1">
+              <div className="-mx-1 flex min-w-0 gap-1 overflow-x-auto px-1 scrollbar-none [&>button]:shrink-0 [&>button]:whitespace-nowrap sm:flex-wrap">
                 {([
                   ["prochaines", "Prochaines réunions"],
                   ["passees", "Réunions passées"],
@@ -185,7 +185,7 @@ export function MicrosoftWindows({
       {expanded === "outlook" ? (
         <LargeDesk title="Outlook" tint="bg-[#0f6cbd]" onClose={() => setExpanded(null)}>
           <div className="grid min-h-[24rem] md:grid-cols-[260px_minmax(0,1fr)]">
-            <div className="max-h-[70vh] overflow-y-auto border-b border-[#eef2f7] md:border-b-0 md:border-r">
+            <div className={`overflow-y-auto border-b border-[#eef2f7] md:block md:max-h-[70vh] md:border-b-0 md:border-r ${openMail ? "hidden" : ""}`}>
               {visibleMail.map((item) => (
                 <button key={item.id} type="button" onClick={() => setOpenMail(item)} className={`flex w-full items-start gap-2 px-3 py-3 text-left ${openMail?.id === item.id ? "bg-[#e8f3ff]" : "hover:bg-[#f4f7fb]"}`}>
                   <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${item.unread ? "bg-[#0f6cbd]" : "bg-transparent"}`} />
@@ -196,7 +196,8 @@ export function MicrosoftWindows({
                 </button>
               ))}
             </div>
-            <div className="max-h-[70vh] overflow-y-auto p-4">
+            <div className={`overflow-y-auto p-4 md:block md:max-h-[70vh] ${openMail ? "" : "hidden"}`}>
+              {openMail ? <BackToList onClick={() => setOpenMail(null)} /> : null}
               {openMail ? <MailReader item={openMail} reply={reply} setReply={setReply} feedback={feedback} pending={pending} onRead={() => run(openMail.id, "read")} onArchive={() => run(openMail.id, "archive")} onReply={() => run(openMail.id, "reply", reply)} /> : <p className="text-sm text-[#6b7280]">Choisissez un courriel.</p>}
             </div>
           </div>
@@ -206,7 +207,7 @@ export function MicrosoftWindows({
       {expanded === "teams" ? (
         <LargeDesk title="Teams" tint="bg-[#5b5fc7]" onClose={() => setExpanded(null)}>
           <div className="grid min-h-[24rem] md:grid-cols-[260px_minmax(0,1fr)]">
-            <div className="max-h-[70vh] overflow-y-auto border-b border-[#eef2f7] md:border-b-0 md:border-r">
+            <div className={`overflow-y-auto border-b border-[#eef2f7] md:block md:max-h-[70vh] md:border-b-0 md:border-r ${openMeeting ? "hidden" : ""}`}>
               {(meetTab === "enregistrements" ? [] : shownMeetings).map((item) => (
                 <button key={item.id} type="button" onClick={() => setOpenMeeting(item)} className={`block w-full px-3 py-3 text-left ${openMeeting?.id === item.id ? "bg-[#eef0ff]" : "hover:bg-[#f4f7fb]"}`}>
                   <span className="block truncate text-sm font-medium text-[#10233f]">{item.subject}</span>
@@ -214,7 +215,8 @@ export function MicrosoftWindows({
                 </button>
               ))}
             </div>
-            <div className="p-4">
+            <div className={`p-4 md:block ${openMeeting ? "" : "hidden"}`}>
+              {openMeeting ? <BackToList onClick={() => setOpenMeeting(null)} /> : null}
               {openMeeting ? <MeetingReader item={openMeeting} /> : <p className="text-sm text-[#6b7280]">Choisissez une réunion.</p>}
             </div>
           </div>
@@ -222,12 +224,12 @@ export function MicrosoftWindows({
       ) : null}
 
       {openMail && expanded !== "outlook" ? (
-        <FloatingWindow title={openMail.subject} tint="bg-[#0f6cbd]" large={mailLarge} onToggle={() => setMailLarge((value) => !value)} onClose={() => setOpenMail(null)} className="right-4 sm:right-6">
+        <FloatingWindow title={openMail.subject} tint="bg-[#0f6cbd]" large={mailLarge} onToggle={() => setMailLarge((value) => !value)} onClose={() => setOpenMail(null)} className="sm:right-6">
           <MailReader item={openMail} reply={reply} setReply={setReply} feedback={feedback} pending={pending} onRead={() => run(openMail.id, "read")} onArchive={() => run(openMail.id, "archive")} onReply={() => run(openMail.id, "reply", reply)} />
         </FloatingWindow>
       ) : null}
       {openMeeting && expanded !== "teams" ? (
-        <FloatingWindow title={openMeeting.subject} tint="bg-[#5b5fc7]" large={meetingLarge} onToggle={() => setMeetingLarge((value) => !value)} onClose={() => setOpenMeeting(null)} className={openMail && expanded !== "outlook" ? "bottom-[28rem] right-4 sm:right-6" : "right-4 sm:right-6"}>
+        <FloatingWindow title={openMeeting.subject} tint="bg-[#5b5fc7]" large={meetingLarge} onToggle={() => setMeetingLarge((value) => !value)} onClose={() => setOpenMeeting(null)} className={openMail && expanded !== "outlook" ? "sm:bottom-[30rem] sm:right-6" : "sm:right-6"}>
           <MeetingReader item={openMeeting} />
         </FloatingWindow>
       ) : null}
@@ -338,7 +340,7 @@ function DeskHeader({
         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15">{icon}</span>
         <span>
           <span className="block text-sm font-semibold">{title}</span>
-          <span className="block text-[11px] text-white/80">{subtitle}</span>
+          <span className="hidden text-[11px] text-white/80 sm:block">{subtitle}</span>
         </span>
       </div>
       <div className="flex items-center gap-2">
@@ -374,18 +376,26 @@ function MailToolbar({
   ] as const;
   return (
     <div className="flex flex-wrap items-center gap-2 px-3 py-2">
-      <div className="flex flex-wrap gap-1">
+      <div className="-mx-1 flex min-w-0 max-w-full gap-1 overflow-x-auto px-1 scrollbar-none sm:flex-wrap">
         {tabs.map(([id, label]) => (
-          <button key={id} type="button" onClick={() => setTab(id)} className={tab === id ? "rounded-full bg-[#e8f3ff] px-3 py-1 text-xs font-medium text-[#0f6cbd]" : "rounded-full px-3 py-1 text-xs text-[#5e6875]"}>
+          <button key={id} type="button" onClick={() => setTab(id)} className={`shrink-0 whitespace-nowrap ${tab === id ? "rounded-full bg-[#e8f3ff] px-3 py-1 text-xs font-medium text-[#0f6cbd]" : "rounded-full px-3 py-1 text-xs text-[#5e6875]"}`}>
             {label}
           </button>
         ))}
       </div>
-      <span className="relative ml-auto min-w-40 flex-1 sm:max-w-xs">
+      <span className="relative ml-auto w-full min-w-40 flex-1 sm:w-auto sm:max-w-xs">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8b939e]" />
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Rechercher un courriel..." className="h-8 w-full rounded-full border border-[#e6eef8] pl-8 pr-3 text-xs outline-none focus:border-[#0f6cbd]" />
       </span>
     </div>
+  );
+}
+
+function BackToList({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="mb-3 inline-flex items-center gap-1 text-sm font-medium text-[#2f6fed] md:hidden">
+      <ArrowLeft className="h-4 w-4" />Retour à la liste
+    </button>
   );
 }
 
@@ -406,7 +416,7 @@ function LargeDesk({
   children: React.ReactNode;
 }) {
   return (
-    <section className="fixed inset-x-3 top-20 z-40 flex h-[70vh] min-h-[280px] min-w-[320px] flex-col overflow-hidden rounded-2xl border border-[#d7e0ee] bg-white shadow-2xl sm:inset-x-8 lg:inset-x-24">
+    <section className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-white sm:inset-x-8 sm:bottom-auto sm:top-20 sm:h-[70vh] sm:min-h-[280px] sm:min-w-[320px] sm:rounded-2xl sm:border sm:border-[#d7e0ee] sm:shadow-2xl lg:inset-x-24">
       <div className={`flex h-11 shrink-0 items-center gap-2 px-3 text-white ${tint}`}>
         <p className="min-w-0 flex-1 text-sm font-medium">{title}</p>
         <button type="button" onClick={onClose} aria-label={`Réduire ${title}`} className="rounded-full p-1 hover:bg-white/15">
@@ -440,7 +450,7 @@ function FloatingWindow({
   children: React.ReactNode;
 }) {
   return (
-    <section className={`fixed z-40 flex min-h-[220px] min-w-[280px] flex-col overflow-hidden rounded-2xl border border-[#d7e0ee] bg-white shadow-2xl ${large ? "inset-x-3 top-20 h-[70vh] sm:inset-x-10 lg:inset-x-28" : `bottom-6 h-[28rem] w-[min(100vw-2rem,26rem)] ${className ?? ""}`}`}>
+    <section className={`fixed inset-x-0 bottom-0 top-12 z-50 flex flex-col overflow-hidden rounded-t-2xl border border-[#d7e0ee] bg-white shadow-2xl sm:min-h-[220px] sm:min-w-[280px] sm:rounded-2xl ${large ? "sm:inset-x-10 sm:bottom-auto sm:top-20 sm:h-[70vh] lg:inset-x-28" : `sm:left-auto sm:top-auto sm:h-[28rem] sm:w-[min(100vw-2rem,26rem)] ${className?.includes("bottom-") ? "" : "sm:bottom-6"} ${className ?? ""}`}`}>
       <div className={`flex h-10 shrink-0 items-center gap-2 px-3 text-white ${tint}`}>
         <p className="min-w-0 flex-1 truncate text-sm font-medium">{title}</p>
         <button type="button" onClick={onToggle} aria-label={large ? "Réduire la fenêtre" : "Agrandir la fenêtre"} className="rounded-full p-1 hover:bg-white/15">
@@ -493,7 +503,7 @@ function ResizeGrip() {
       type="button"
       aria-label="Redimensionner la fenêtre"
       onPointerDown={start}
-      className="absolute bottom-0 right-0 z-20 h-5 w-5 cursor-nwse-resize touch-none"
+      className="absolute bottom-0 right-0 z-20 hidden h-5 w-5 cursor-nwse-resize touch-none sm:block"
     >
       <span className="absolute bottom-1 right-1 h-2.5 w-2.5 border-b-2 border-r-2 border-[#8b939e]" />
     </button>

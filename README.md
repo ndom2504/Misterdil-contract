@@ -24,6 +24,10 @@ Ouvrir http://localhost:3000
 
 Sans `OPENAI_API_KEY`, Misterdil AI s'appuie sur le contexte du document. Avec une clé, les appels partent du serveur vers l'API OpenAI. La clé n'est jamais envoyée au navigateur.
 
+## Pièces jointes
+
+Les fichiers vont dans un store Vercel Blob privé, relié au projet (`BLOB_READ_WRITE_TOKEN` ou OIDC sur Vercel). Ils ne sont jamais servis par une adresse publique : `/api/attachments/[id]` vérifie que l'utilisateur est membre de l'espace, puis transmet le fichier. Sans store configuré en local, les fichiers restent dans `data/uploads`.
+
 ## Base de données
 
 PostgreSQL, hébergé sur Neon et relié à Vercel.

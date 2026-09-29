@@ -14,7 +14,7 @@ export default async function NewAgreementPage({ searchParams }: { searchParams:
   );
   const draft = brouillon ? await getDocumentView(user, brouillon) : null;
   if (brouillon && !draft) notFound();
-  if (draft && draft.sections.length > 0) redirect(`/documents/${draft.id}`);
+  if (draft && !draft.access.canEdit) redirect(`/documents/${draft.id}`);
 
   return (
     <AgreementWizard
@@ -28,6 +28,9 @@ export default async function NewAgreementPage({ searchParams }: { searchParams:
         email: user.email,
         organization: user.organization?.name ?? "",
         jobTitle: user.jobTitle,
+        phone: user.organization?.phone || user.phone,
+        address: user.organization?.address ?? "",
+        individual: user.organization?.kind === "INDIVIDUAL",
       }}
       draft={draft ? {
         id: draft.id,
@@ -45,20 +48,8 @@ export default async function NewAgreementPage({ searchParams }: { searchParams:
               duree: draft.brief.duree,
             }
           : null,
-        wizardStep: draft.wizardStep,
         responses: draft.responses,
-        moderatorId: draft.moderatorId,
-        stakeholders: draft.stakeholders.map((party) => ({
-          name: party.name,
-          organization: party.organization,
-          partyType: party.partyType,
-          email: party.email,
-          phone: party.phone,
-          representative: party.representative,
-          jobTitle: party.jobTitle,
-          address: party.address,
-          accessRole: party.accessRole,
-        })),
+        hasContent: draft.sections.some((section) => section.anchor !== "parties" && section.content.trim().length > 0),
       } : null}
     />
   );

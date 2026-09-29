@@ -38,10 +38,43 @@ export async function loadDocumentForUser(documentId: string, user: SessionUser)
     stakeholderRole: stakeholder?.accessRole ?? null,
     isStakeholder: Boolean(stakeholder),
     isDocumentModerator: document.moderatorId === user.id,
+    sent: Boolean(document.sentAt),
   });
   if (!access) return null;
 
   return { document, access, stakeholder };
+}
+
+// Same rules as loadDocumentForUser without loading the whole document, for frequent polling.
+export async function documentAccess(documentId: string, user: { id: string; email: string }) {
+  const document = await prisma.document.findUnique({
+    where: { id: documentId },
+    select: {
+      id: true,
+      workspaceId: true,
+      moderatorId: true,
+      sentAt: true,
+      status: true,
+      stakeholders: { select: { userId: true, email: true, accessRole: true } },
+    },
+  });
+  if (!document) return null;
+  const membership = await prisma.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId: document.workspaceId, userId: user.id } },
+    select: { role: true },
+  });
+  const stakeholder = document.stakeholders.find(
+    (item) => item.userId === user.id || item.email.toLowerCase() === user.email.toLowerCase(),
+  );
+  const access = resolveAccess({
+    workspaceRole: membership?.role ?? null,
+    stakeholderRole: stakeholder?.accessRole ?? null,
+    isStakeholder: Boolean(stakeholder),
+    isDocumentModerator: document.moderatorId === user.id,
+    sent: Boolean(document.sentAt),
+  });
+  if (!access) return null;
+  return { document, access };
 }
 
 export type LoadedDocument = NonNullable<Awaited<ReturnType<typeof loadDocumentForUser>>>;

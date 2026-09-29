@@ -1,9 +1,8 @@
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/server/current-user";
 import { prisma } from "@/server/db";
 import { recordActivity } from "@/server/journal";
+import { storeFile } from "@/server/storage";
 
 const ALLOWED = new Set(["pdf", "doc", "docx", "xls", "xlsx", "png", "jpg", "jpeg", "webp"]);
 const MAX = 10 * 1024 * 1024;
@@ -29,18 +28,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Dépôt non autorisé." }, { status: 403 });
   }
 
-  const directory = path.join(process.cwd(), "data", "uploads");
-  await mkdir(directory, { recursive: true });
-  const stored = `${crypto.randomUUID()}.${extension}`;
-  const bytes = Buffer.from(await file.arrayBuffer());
-  await writeFile(path.join(directory, stored), bytes);
+  const mimeType = file.type || "application/octet-stream";
+  let stored: string;
+  try {
+    stored = await storeFile(extension, Buffer.from(await file.arrayBuffer()), mimeType);
+  } catch (error) {
+    console.error("[pieces-jointes]", error instanceof Error ? error.message : error);
+    return NextResponse.json({ error: "Le fichier n'a pas pu être enregistré. Réessayez." }, { status: 500 });
+  }
 
   const attachment = await prisma.attachment.create({
     data: {
       workspaceId,
       documentId: documentId || null,
       name: file.name,
-      mimeType: file.type || "application/octet-stream",
+      mimeType,
       size: file.size,
       storagePath: stored,
       uploadedById: user.id,

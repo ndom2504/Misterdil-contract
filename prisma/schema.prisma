@@ -37,6 +37,7 @@ model User {
   uploads        Attachment[]
   invitationsSent Invitation[] @relation("InvitedBy")
   microsoft      MicrosoftAccount?
+  presences      Presence[]
 }
 
 model MicrosoftAccount {
@@ -53,7 +54,10 @@ model MicrosoftAccount {
 model Organization {
   id        String   @id @default(cuid())
   name      String
+  kind      String   @default("ORGANIZATION")
   sector    String?
+  address   String   @default("")
+  phone     String   @default("")
   ownerId   String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -137,9 +141,11 @@ model Document {
   createdBy       User     @relation("DocumentCreator", fields: [createdById], references: [id])
   moderatorId     String?
   moderator       User?    @relation("DocumentModerator", fields: [moderatorId], references: [id])
+  sentAt          DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  presences       Presence[]
   sections        DocumentSection[]
   stakeholders    Stakeholder[]
   responses       FormResponse[]
@@ -166,6 +172,8 @@ model DocumentSection {
   status     String   @default("NOT_STARTED")
   position   Int
   updatedAt  DateTime @updatedAt
+  updatedById   String?
+  updatedByName String   @default("")
   discussions Discussion[]
   proposals  Proposal[]
   approvals  Approval[]
@@ -224,6 +232,7 @@ model Stakeholder {
   jobTitle       String   @default("")
   address        String   @default("")
   accessRole     String   @default("PARTICIPANT")
+  invitedAt      DateTime?
   createdAt      DateTime @default(now())
   signatures     Signature[]
 
@@ -389,8 +398,24 @@ model Invitation {
   documentId  String    @default("")
   invitedById String
   invitedBy   User      @relation("InvitedBy", fields: [invitedById], references: [id])
+  token       String    @unique @default(cuid())
   status      String    @default("PENDING")
+  sentAt      DateTime?
+  acceptedById String?
   createdAt   DateTime  @default(now())
 
   @@index([email])
+}
+
+model Presence {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  sectionId  String?
+  lastSeenAt DateTime @default(now())
+
+  @@unique([userId, documentId])
+  @@index([documentId, lastSeenAt])
 }

@@ -137,8 +137,8 @@ export async function analyzeDescription(input: {
 }
 
 export function suggestDomainsLocally(sectorId: string, current: string[]) {
-  const known = new Set(current.map((item) => item.toLowerCase()));
-  return (EXTRA_DOMAINS[sectorId] ?? ["Activité spécialisée"]).filter((item) => !known.has(item.toLowerCase()));
+  const known = new Set(current.map((item) => fold(item)));
+  return (EXTRA_DOMAINS[sectorId] ?? ["Activité spécialisée"]).filter((item) => !known.has(fold(item)));
 }
 
 export async function suggestDomains(sectorId: string, current: string[]) {
@@ -146,16 +146,19 @@ export async function suggestDomains(sectorId: string, current: string[]) {
   const sector = sectorById(sectorId);
   const ai = await complete(
     [
-      { role: "system", content: `${SYSTEM} Propose 3 domaines complémentaires. Réponds en JSON : {"domaines":["..."]}.` },
-      { role: "user", content: `Secteur : ${sector?.label ?? sectorId}. Domaines déjà proposés : ${current.join(", ")}.` },
+      { role: "system", content: `${SYSTEM} Propose 4 domaines d'activité complémentaires, courts (2 à 4 mots), différents de ceux déjà proposés. Réponds en JSON : {"domaines":["..."]}.` },
+      { role: "user", content: `Secteur : ${sector?.label ?? sectorId}. Domaines déjà proposés : ${current.join(", ") || "aucun"}.` },
     ],
     true,
   );
   if (!ai) return local;
   try {
     const parsed = JSON.parse(ai) as { domaines?: string[] };
-    const extra = (parsed.domaines ?? []).map((item) => item.trim()).filter(Boolean);
-    return extra.length ? extra : local;
+    const known = new Set(current.map((item) => fold(item)));
+    const extra = (parsed.domaines ?? [])
+      .map((item) => item.trim())
+      .filter((item) => item && item.length <= 60 && !known.has(fold(item)));
+    return extra.length ? [...new Set(extra)] : local;
   } catch {
     return local;
   }

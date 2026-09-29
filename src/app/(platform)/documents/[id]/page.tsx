@@ -22,7 +22,7 @@ export default async function DocumentPage({
   const user = await requireUser();
   const view = await getDocumentView(user, id);
   if (!view) notFound();
-  if (view.sections.length === 0) redirect(`/documents/nouveau?brouillon=${id}`);
+  if (view.sections.length === 0 && view.access.canEdit) redirect(`/documents/nouveau?brouillon=${id}`);
   const history = await assistantHistory(user.id, id);
   return <DocumentWorkspace view={view} initialTab={onglet ?? "document"} history={history} />;
 }

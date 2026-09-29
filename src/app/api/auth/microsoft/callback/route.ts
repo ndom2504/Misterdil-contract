@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
+import { cleanNext, onboardingPath } from "@/lib/next-path";
 import { prisma } from "@/server/db";
 import { acceptInvitations } from "@/server/invitations";
 import { exchangeMicrosoftCode, saveMicrosoftAccount } from "@/server/microsoft";
@@ -36,9 +37,9 @@ export async function GET(request: Request) {
   if (!code || !state) return fail("connexion-interrompue", "code ou state absent");
   if (!proofCookie) return fail("connexion-interrompue", "témoin de preuve absent (délai de 10 minutes dépassé ou autre domaine)");
 
-  let proof: { state?: string; verifier?: string };
+  let proof: { state?: string; verifier?: string; next?: string };
   try {
-    proof = JSON.parse(decodeURIComponent(proofCookie)) as { state?: string; verifier?: string };
+    proof = JSON.parse(decodeURIComponent(proofCookie)) as { state?: string; verifier?: string; next?: string };
   } catch {
     return fail("connexion-interrompue", "témoin de preuve illisible");
   }
@@ -73,7 +74,8 @@ export async function GET(request: Request) {
     }
 
     await saveMicrosoftAccount(userId, token);
-    const response = redirectTo(onboarded ? "/accueil?microsoft=ok" : "/onboarding");
+    const next = cleanNext(proof.next ?? "", "");
+    const response = redirectTo(onboarded ? next || "/accueil?microsoft=ok" : onboardingPath(next));
     if (!sessionUserId) {
       response.cookies.set(COOKIE, await signSession(userId, 14), {
         httpOnly: true,
