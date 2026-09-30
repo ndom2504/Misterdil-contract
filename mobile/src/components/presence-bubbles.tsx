@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colorFor, formatRelative, initials, roleLabel } from '@/lib/format';
+import { Avatar } from '@/components/avatar';
+import { formatRelative, initials, roleLabel } from '@/lib/format';
 import { colors, radius, space } from '@/lib/theme';
 import type { DocumentView, PresenceEntry } from '@/lib/types';
 
@@ -13,6 +14,7 @@ export type BubblePerson = {
   state: 'online' | 'offline' | 'invited' | 'draft';
   detail: string;
   isYou: boolean;
+  avatarUrl?: string;
 };
 
 export function buildPeople(view: DocumentView, presence: PresenceEntry[]): BubblePerson[] {
@@ -34,14 +36,15 @@ export function buildPeople(view: DocumentView, presence: PresenceEntry[]): Bubb
     const role = `${roleLabel(party.accessRole)}`;
     if (party.userId) {
       seen.add(party.userId);
-      const status = describe(byUser.get(party.userId));
+      const entry = byUser.get(party.userId);
       people.push({
         key: party.id,
         name: party.representative || party.name,
         organization: party.organization,
         role,
-        ...status,
+        ...describe(entry),
         isYou: party.userId === view.currentUserId,
+        avatarUrl: party.avatarUrl || entry?.avatarUrl,
       });
       continue;
     }
@@ -62,13 +65,15 @@ export function buildPeople(view: DocumentView, presence: PresenceEntry[]): Bubb
 
   if (view.moderatorId && !seen.has(view.moderatorId)) {
     seen.add(view.moderatorId);
+    const entry = byUser.get(view.moderatorId);
     people.unshift({
       key: `moderator-${view.moderatorId}`,
       name: view.moderatorName,
       organization: '',
       role: 'Modérateur',
-      ...describe(byUser.get(view.moderatorId)),
+      ...describe(entry),
       isYou: view.moderatorId === view.currentUserId,
+      avatarUrl: view.moderatorAvatar || entry?.avatarUrl,
     });
   }
 
@@ -81,6 +86,7 @@ export function buildPeople(view: DocumentView, presence: PresenceEntry[]): Bubb
       role: entry.jobTitle,
       ...describe(entry),
       isYou: entry.userId === view.currentUserId,
+      avatarUrl: entry.avatarUrl,
     });
   }
   return people;
@@ -103,12 +109,12 @@ export function PresenceBubbles({ people, max = 6 }: { people: BubblePerson[]; m
               accessibilityRole="button"
               accessibilityLabel={`${person.name} — ${person.detail}`}
               onPress={() => setOpen(person)}
-              style={[
-                styles.bubble,
-                { marginLeft: index === 0 ? 0 : -10, backgroundColor: pending ? '#fff' : colorFor(person.name) },
-                pending && styles.bubblePending,
-              ]}>
-              <Text style={[styles.initials, pending && { color: colors.muted }]}>{initials(person.name)}</Text>
+              style={[styles.bubble, { marginLeft: index === 0 ? 0 : -10 }, pending && styles.bubblePending]}>
+              {pending ? (
+                <Text style={[styles.initials, { color: colors.muted }]}>{initials(person.name)}</Text>
+              ) : (
+                <Avatar name={person.name} url={person.avatarUrl} size={32} />
+              )}
               {!pending ? (
                 <View style={[styles.dot, { backgroundColor: person.state === 'online' ? colors.success : '#b8bfc9' }]} />
               ) : null}
@@ -127,12 +133,17 @@ export function PresenceBubbles({ people, max = 6 }: { people: BubblePerson[]; m
         <Pressable style={styles.backdrop} onPress={() => setOpen(null)}>
           {open ? (
             <View style={styles.popover}>
-              <Text style={styles.popName}>
-                {open.name}
-                {open.isYou ? <Text style={styles.popYou}> (vous)</Text> : null}
-              </Text>
-              {open.organization ? <Text style={styles.popMeta}>{open.organization}</Text> : null}
-              {open.role ? <Text style={styles.popMeta}>{open.role}</Text> : null}
+              <View style={styles.popHead}>
+                {open.state === 'invited' || open.state === 'draft' ? null : <Avatar name={open.name} url={open.avatarUrl} size={44} />}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.popName}>
+                    {open.name}
+                    {open.isYou ? <Text style={styles.popYou}> (vous)</Text> : null}
+                  </Text>
+                  {open.organization ? <Text style={styles.popMeta}>{open.organization}</Text> : null}
+                  {open.role ? <Text style={styles.popMeta}>{open.role}</Text> : null}
+                </View>
+              </View>
               <View style={styles.popStatus}>
                 <View
                   style={[
@@ -161,6 +172,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: '#fff',
+    backgroundColor: '#fff',
   },
   bubblePending: { borderStyle: 'dashed', borderColor: '#b8bfc9' },
   more: { backgroundColor: '#eef1f5' },
@@ -178,6 +190,7 @@ const styles = StyleSheet.create({
   online: { fontSize: 13, color: colors.success, fontWeight: '600' },
   backdrop: { flex: 1, backgroundColor: 'rgba(11,31,58,0.25)', justifyContent: 'center', padding: space.xl },
   popover: { backgroundColor: '#fff', borderRadius: radius.lg, padding: space.lg, gap: 4 },
+  popHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   popName: { fontSize: 17, fontWeight: '700', color: colors.text },
   popYou: { fontWeight: '400', color: colors.faint },
   popMeta: { fontSize: 14, color: colors.muted },

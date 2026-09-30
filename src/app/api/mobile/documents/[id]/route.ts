@@ -29,6 +29,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       workspaceName: view.workspaceName,
       moderatorId: view.moderatorId,
       moderatorName: view.moderatorName,
+      moderatorAvatar: view.moderatorAvatar,
       currentUserId: view.currentUserId,
       loadedAt: view.loadedAt,
       sentAt: view.sentAt,

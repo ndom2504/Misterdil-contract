@@ -15,6 +15,7 @@ export type PresenceEntry = {
   name: string;
   organization: string;
   jobTitle: string;
+  avatarUrl: string;
   sectionId: string | null;
   lastSeenAt: string;
   online: boolean;

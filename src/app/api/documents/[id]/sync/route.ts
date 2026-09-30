@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { ONLINE_WINDOW_MS, type SyncPayload } from "@/lib/document-sync";
+import { avatarUrl } from "@/server/current-user";
 import { prisma } from "@/server/db";
 import { documentAccess } from "@/server/guard";
 import { readSessionUserId } from "@/server/session";
@@ -11,8 +12,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   const { id } = await context.params;
   const userId = await readSessionUserId();
   if (!userId) return NextResponse.json({ error: "Non autorisé." }, { status: 401 });
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true } });
-  if (!user) return NextResponse.json({ error: "Non autorisé." }, { status: 401 });
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, disabledAt: true } });
+  if (!user || user.disabledAt) return NextResponse.json({ error: "Non autorisé." }, { status: 401 });
 
   const allowed = await documentAccess(id, user);
   if (!allowed) return NextResponse.json({ error: "Document introuvable." }, { status: 404 });
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   const [presences, sections, lastActivity, comments, proposals, stakeholders, likes, views, colors] = await Promise.all([
     prisma.presence.findMany({
       where: { documentId: id },
-      include: { user: { select: { name: true, jobTitle: true, organization: { select: { name: true } } } } },
+      include: { user: { select: { id: true, name: true, jobTitle: true, avatarPath: true, updatedAt: true, organization: { select: { name: true } } } } },
     }),
     since
       ? prisma.documentSection.findMany({
@@ -74,6 +75,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       name: item.user.name,
       organization: item.user.organization?.name ?? "",
       jobTitle: item.user.jobTitle ?? "",
+      avatarUrl: avatarUrl(item.user),
       sectionId: item.sectionId,
       lastSeenAt: item.lastSeenAt.toISOString(),
       online: now.getTime() - item.lastSeenAt.getTime() < ONLINE_WINDOW_MS,

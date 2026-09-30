@@ -34,13 +34,14 @@ function buildPeople(view: View, presence: PresenceEntry[]): BubblePerson[] {
   const used = new Set<string>();
   const people: BubblePerson[] = [];
 
-  function registered(userId: string, name: string, organization: string, role: string): BubblePerson {
+  function registered(userId: string, name: string, organization: string, role: string, avatar = ""): BubblePerson {
     used.add(userId);
     const entry = seen.get(userId);
     const isYou = userId === view.currentUserId;
+    const avatarUrl = avatar || entry?.avatarUrl || "";
     if (isYou || entry?.online) {
       const title = entry?.sectionId ? view.sections.find((section) => section.id === entry.sectionId)?.title : undefined;
-      return { key: userId, name, organization, role, isYou, state: "online", detail: title ? `En ligne · modifie « ${title} »` : "En ligne" };
+      return { key: userId, name, organization, role, isYou, avatarUrl, state: "online", detail: title ? `En ligne · modifie « ${title} »` : "En ligne" };
     }
     return {
       key: userId,
@@ -48,6 +49,7 @@ function buildPeople(view: View, presence: PresenceEntry[]): BubblePerson[] {
       organization,
       role,
       isYou,
+      avatarUrl,
       state: "offline",
       detail: entry ? `Vu ${formatRelative(entry.lastSeenAt)}` : "N'a pas encore ouvert l'entente",
     };
@@ -58,7 +60,7 @@ function buildPeople(view: View, presence: PresenceEntry[]): BubblePerson[] {
     const role = `${partyLabel(party.partyType)} · ${party.userId && party.userId === view.moderatorId ? "Modérateur" : roleLabel(party.accessRole)}`;
     const organization = party.organization && party.organization !== name ? party.organization : "";
     if (party.userId) {
-      if (!used.has(party.userId)) people.push(registered(party.userId, name, organization, role));
+      if (!used.has(party.userId)) people.push(registered(party.userId, name, organization, role, party.avatarUrl));
       continue;
     }
     people.push({
@@ -76,7 +78,7 @@ function buildPeople(view: View, presence: PresenceEntry[]): BubblePerson[] {
     });
   }
   if (view.moderatorId && !used.has(view.moderatorId)) {
-    people.push(registered(view.moderatorId, view.moderatorName, "", "Modérateur"));
+    people.push(registered(view.moderatorId, view.moderatorName, "", "Modérateur", view.moderatorAvatar));
   }
   for (const entry of presence) {
     if (entry.online && !used.has(entry.userId)) {

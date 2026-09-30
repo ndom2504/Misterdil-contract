@@ -90,6 +90,7 @@ export type Stakeholder = {
   address: string;
   accessRole: string;
   invitedAt: string | null;
+  avatarUrl?: string;
   isCurrentUser: boolean;
 };
 
@@ -191,6 +192,7 @@ export type DocumentView = {
   workspaceName: string;
   moderatorId: string | null;
   moderatorName: string;
+  moderatorAvatar?: string;
   currentUserId: string;
   loadedAt: string;
   sentAt: string | null;
@@ -232,6 +234,7 @@ export type PresenceEntry = {
   name: string;
   organization: string;
   jobTitle: string;
+  avatarUrl?: string;
   sectionId: string | null;
   lastSeenAt: string;
   online: boolean;

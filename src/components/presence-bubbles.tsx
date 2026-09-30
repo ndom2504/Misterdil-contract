@@ -12,6 +12,7 @@ export type BubblePerson = {
   state: "online" | "offline" | "invited" | "draft";
   detail: string;
   isYou: boolean;
+  avatarUrl?: string;
 };
 
 const PALETTE = ["#2f6fed", "#0f9d78", "#c56a10", "#7c3aed", "#d9466f", "#0e7490", "#4b5563"];
@@ -95,7 +96,12 @@ export function PresenceBubbles({
                 )}
                 style={invitee ? undefined : { backgroundColor: colorFor(person.key) }}
               >
-                {initials(person.name) || "?"}
+                {person.avatarUrl && !invitee ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- private, cookie-authenticated avatar
+                  <img src={person.avatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
+                ) : (
+                  initials(person.name) || "?"
+                )}
                 {invitee ? null : (
                   <span
                     className={cn(

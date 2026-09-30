@@ -1,7 +1,7 @@
 import { fieldsFor, sectorById } from "@/lib/catalog";
 import { progressFromSections, type ProgressStats } from "@/lib/progress";
 import { can, resolveAccess } from "@/server/access";
-import type { SessionUser } from "@/server/current-user";
+import { avatarUrl, type SessionUser } from "@/server/current-user";
 import { prisma } from "@/server/db";
 import { loadDocumentForUser } from "@/server/guard";
 import { pendingInvitationLinks } from "@/server/sharing";
@@ -321,6 +321,15 @@ export async function getDocumentView(user: SessionUser, documentId: string) {
     threads,
   );
   const emptySocial = { likes: 0, liked: false, views: 0, comments: 0, people: [] };
+  const memberIds = [
+    ...new Set([document.moderatorId, ...document.stakeholders.map((item) => item.userId)].filter((id): id is string => Boolean(id))),
+  ];
+  const avatars = new Map(
+    (memberIds.length
+      ? await prisma.user.findMany({ where: { id: { in: memberIds } }, select: { id: true, avatarPath: true, updatedAt: true } })
+      : []
+    ).map((item) => [item.id, avatarUrl(item)]),
+  );
 
   const finalApprovals = document.approvals.filter((item) => !item.sectionId);
   const readyForFinal =
@@ -345,6 +354,7 @@ export async function getDocumentView(user: SessionUser, documentId: string) {
     workspaceName: document.workspace.name,
     moderatorId: document.moderatorId,
     moderatorName: document.moderator?.name ?? "Non désigné",
+    moderatorAvatar: document.moderatorId ? avatars.get(document.moderatorId) ?? "" : "",
     currentUserId: user.id,
     loadedAt: iso(loadedAt),
     sentAt: document.sentAt ? iso(document.sentAt) : null,
@@ -392,6 +402,7 @@ export async function getDocumentView(user: SessionUser, documentId: string) {
       address: item.address,
       accessRole: item.accessRole,
       invitedAt: item.invitedAt ? iso(item.invitedAt) : null,
+      avatarUrl: item.userId ? avatars.get(item.userId) ?? "" : "",
       isCurrentUser: item.userId === user.id || item.email.toLowerCase() === user.email.toLowerCase(),
     })),
     discussions: document.discussions.map((discussion) => ({
