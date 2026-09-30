@@ -27,6 +27,10 @@ export async function POST(request: Request) {
   if (!membership || membership.role === "READER") {
     return NextResponse.json({ error: "Dépôt non autorisé." }, { status: 403 });
   }
+  if (documentId) {
+    const document = await prisma.document.findUnique({ where: { id: documentId }, select: { workspaceId: true } });
+    if (document?.workspaceId !== workspaceId) return NextResponse.json({ error: "Dépôt non autorisé." }, { status: 403 });
+  }
 
   const mimeType = file.type || "application/octet-stream";
   let stored: string;

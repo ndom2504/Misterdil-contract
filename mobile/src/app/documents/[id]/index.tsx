@@ -3,15 +3,18 @@ import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'exp
 import { useCallback, useLayoutEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 
+import { FileRow } from '@/components/file-row';
 import { buildPeople, PresenceBubbles } from '@/components/presence-bubbles';
+import { SignaturePanel } from '@/components/signature-panel';
 import { Button, Card, Loading, Message, ProgressBar, SectionTitle, StatusBadge } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
+import { ententePdf, openRemoteFile, pickAndUpload } from '@/lib/files';
 import { formatRelative, partyLabel, roleLabel } from '@/lib/format';
 import { colors, radius, space } from '@/lib/theme';
 import type { DocumentView, InvitationLink, ShareResult, SyncSection } from '@/lib/types';
 import { useDocumentSync } from '@/lib/use-document-sync';
 
-type Tab = 'sections' | 'participants' | 'activite';
+type Tab = 'sections' | 'participants' | 'fichiers' | 'activite';
 
 const STEPS = ['Équipe', 'Type', 'Sections', 'Envoyer'];
 
@@ -25,6 +28,7 @@ export default function DocumentScreen() {
   const [sending, setSending] = useState(false);
   const [outcome, setOutcome] = useState<{ shared: ShareResult[]; links: InvitationLink[] } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [fileBusy, setFileBusy] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -43,8 +47,16 @@ export default function DocumentScreen() {
   );
 
   useLayoutEffect(() => {
-    if (view) navigation.setOptions({ title: view.title });
-  }, [navigation, view]);
+    if (!view) return;
+    navigation.setOptions({
+      title: view.title,
+      headerRight: () => (
+        <Pressable accessibilityLabel="Discussion de l'entente" hitSlop={12} onPress={() => router.push(`/conversation/${id}`)}>
+          <Ionicons name="chatbubbles-outline" size={24} color={colors.brand} />
+        </Pressable>
+      ),
+    });
+  }, [navigation, view, id]);
 
   const presence = useDocumentSync({
     documentId: id,
@@ -79,6 +91,19 @@ export default function DocumentScreen() {
       .filter((entry) => entry.online && entry.sectionId && entry.userId !== view.currentUserId)
       .map((entry) => [entry.sectionId as string, entry.name]),
   );
+
+  async function fileTask(key: string, task: () => Promise<unknown>) {
+    if (fileBusy) return;
+    setFileBusy(key);
+    setError('');
+    try {
+      await task();
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setFileBusy('');
+    }
+  }
 
   async function send() {
     setSending(true);
@@ -165,11 +190,14 @@ export default function DocumentScreen() {
         <ProgressBar percent={view.progress.percent} />
       </Card>
 
+      {view.sentAt ? <SignaturePanel view={view} onChanged={load} /> : null}
+
       <View style={styles.tabs}>
         {(
           [
             ['sections', 'Sections'],
-            ['participants', `Participants (${view.stakeholders.length})`],
+            ['participants', `Parties (${view.stakeholders.length})`],
+            ['fichiers', `Fichiers (${view.attachments.length})`],
             ['activite', 'Activité'],
           ] as const
         ).map(([key, label]) => (
@@ -239,6 +267,47 @@ export default function DocumentScreen() {
               </Card>
             );
           })}
+        </View>
+      ) : null}
+
+      {tab === 'fichiers' ? (
+        <View style={{ gap: space.sm }}>
+          <View style={styles.fileActions}>
+            <Button
+              label="PDF de l'entente"
+              variant="secondary"
+              style={{ flex: 1 }}
+              loading={fileBusy === 'pdf'}
+              icon={<Ionicons name="document-text-outline" size={18} color={colors.brand} />}
+              onPress={() => void fileTask('pdf', () => ententePdf(view.id, view.title))}
+            />
+            {view.access.documentRole !== 'READER' ? (
+              <Button
+                label="Ajouter"
+                variant="secondary"
+                style={{ flex: 1 }}
+                loading={fileBusy === 'upload'}
+                icon={<Ionicons name="cloud-upload-outline" size={18} color={colors.brand} />}
+                onPress={() =>
+                  void fileTask('upload', async () => {
+                    if (await pickAndUpload(view.workspaceId, view.id)) await load();
+                  })
+                }
+              />
+            ) : null}
+          </View>
+          {view.attachments.length ? (
+            view.attachments.map((file) => (
+              <FileRow
+                key={file.id}
+                file={file}
+                busy={fileBusy === file.id}
+                onOpen={() => void fileTask(file.id, () => openRemoteFile(`/api/attachments/${file.id}`, file.name, file.mimeType))}
+              />
+            ))
+          ) : (
+            <Text style={styles.meta}>Aucun fichier joint. Ajoutez un PDF, un document Word, Excel ou une image (10 Mo max).</Text>
+          )}
         </View>
       ) : null}
 
@@ -343,5 +412,6 @@ const styles = StyleSheet.create({
   preview: { fontSize: 14, color: colors.text, lineHeight: 20 },
   previewEmpty: { color: colors.faint, fontStyle: 'italic' },
   writer: { fontSize: 13, color: colors.success, fontWeight: '600' },
+  fileActions: { flexDirection: 'row', gap: space.sm },
   activity: { gap: 2, paddingVertical: space.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
 });

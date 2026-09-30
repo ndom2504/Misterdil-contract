@@ -18,6 +18,7 @@ model User {
   phone          String?
   jobTitle       String?
   profileType    String?
+  avatarPath     String   @default("")
   onboarded      Boolean  @default(false)
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id])
@@ -39,6 +40,7 @@ model User {
   microsoft      MicrosoftAccount?
   presences      Presence[]
   pushTokens     PushToken[]
+  messages       Message[]
 }
 
 model PushToken {
@@ -170,9 +172,26 @@ model Document {
   activities      Activity[]
   attachments     Attachment[]
   aiMessages      AiInteraction[]
+  messages        Message[]
 
   @@index([workspaceId])
   @@index([status])
+}
+
+// Group chat of an agreement, shared by all its stakeholders. kind is TEXT or CALL
+// (a call started in the agreement's audio room).
+model Message {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  authorId   String?
+  author     User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  authorName String
+  body       String
+  kind       String   @default("TEXT")
+  createdAt  DateTime @default(now())
+
+  @@index([documentId, createdAt])
 }
 
 model DocumentSection {

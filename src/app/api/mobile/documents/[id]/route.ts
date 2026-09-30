@@ -14,6 +14,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       title: view.title,
       typeLabel: view.typeLabel,
       status: view.status,
+      workspaceId: view.workspaceId,
       workspaceName: view.workspaceName,
       moderatorId: view.moderatorId,
       moderatorName: view.moderatorName,
@@ -27,6 +28,11 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       invitationLinks: view.invitationLinks,
       discussions: view.discussions,
       activities: view.activities.slice(0, 30),
+      readyForFinal: view.readyForFinal,
+      partiesApproved: view.partiesApproved,
+      approvals: view.approvals,
+      signatures: view.signatures,
+      attachments: view.attachments,
     },
   });
 }

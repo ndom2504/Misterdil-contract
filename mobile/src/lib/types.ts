@@ -6,6 +6,7 @@ export type User = {
   jobTitle: string;
   profileType: string;
   onboarded: boolean;
+  avatarUrl: string;
   organization: { id: string; name: string; sector: string; kind: string; address: string; phone: string } | null;
 };
 
@@ -76,11 +77,80 @@ export type Discussion = {
 
 export type InvitationLink = { email: string; link: string; emailed: boolean };
 
+export type Approval = {
+  id: string;
+  userId: string;
+  name: string;
+  roleLabel: string;
+  status: string;
+  decidedAt: string | null;
+};
+
+export type Signature = {
+  id: string;
+  stakeholderId: string;
+  name: string;
+  organization: string;
+  partyType: string;
+  status: string;
+  signerName: string;
+  signerEmail: string;
+  signedAt: string | null;
+  method: string;
+  canSign: boolean;
+};
+
+export type FileItem = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+  uploadedByName?: string;
+};
+
+export type FileGroup = {
+  id: string;
+  title: string;
+  typeLabel: string;
+  status: string;
+  workspaceId: string;
+  canUpload: boolean;
+  files: FileItem[];
+};
+
+export type Conversation = {
+  documentId: string;
+  title: string;
+  typeLabel: string;
+  status: string;
+  participants: number;
+  lastMessage: { authorName: string; body: string; kind: string; createdAt: string } | null;
+  updatedAt: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  authorId: string | null;
+  authorName: string;
+  authorAvatar: string;
+  body: string;
+  kind: string;
+  createdAt: string;
+};
+
+export type CallStatus = {
+  configured: boolean;
+  active: boolean;
+  participants: { id: string; name: string }[];
+};
+
 export type DocumentView = {
   id: string;
   title: string;
   typeLabel: string;
   status: string;
+  workspaceId: string;
   workspaceName: string;
   moderatorId: string | null;
   moderatorName: string;
@@ -104,6 +174,11 @@ export type DocumentView = {
   invitationLinks: InvitationLink[];
   discussions: Discussion[];
   activities: { id: string; kind: string; actorName: string; message: string; createdAt: string }[];
+  readyForFinal: boolean;
+  partiesApproved: boolean;
+  approvals: Approval[];
+  signatures: Signature[];
+  attachments: FileItem[];
 };
 
 export type SyncSection = {

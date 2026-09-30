@@ -7,6 +7,7 @@ import { requireUser } from "@/server/current-user";
 import { acceptInvitations } from "@/server/invitations";
 import { saveOnboarding } from "@/server/onboarding";
 import { hashPassword, verifyPassword } from "@/server/password";
+import { savePassword, saveProfile } from "@/server/profile";
 import { clearSession, createSession } from "@/server/session";
 
 export type FormState = { error?: string };
@@ -76,37 +77,15 @@ export async function completeOnboarding(_state: FormState, formData: FormData):
 
 export async function updateProfile(_state: FormState, formData: FormData): Promise<FormState> {
   const user = await requireUser();
-  const name = String(formData.get("name") ?? "").trim();
-  const jobTitle = String(formData.get("jobTitle") ?? "").trim();
-  const phone = String(formData.get("phone") ?? "").trim();
-  const organizationName = String(formData.get("organization") ?? "").trim();
-  if (name.length < 2) return { error: "Indiquez votre nom." };
-
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { name, jobTitle, phone },
+  return saveProfile(user, {
+    name: String(formData.get("name") ?? ""),
+    jobTitle: String(formData.get("jobTitle") ?? ""),
+    phone: String(formData.get("phone") ?? ""),
+    organization: String(formData.get("organization") ?? ""),
   });
-  if (user.organization && organizationName.length > 1) {
-    await prisma.organization.update({
-      where: { id: user.organization.id },
-      data: { name: organizationName },
-    });
-  }
-  return {};
 }
 
 export async function changePassword(_state: FormState, formData: FormData): Promise<FormState> {
   const user = await requireUser();
-  const current = String(formData.get("current") ?? "");
-  const next = String(formData.get("next") ?? "");
-  if (next.length < 8) return { error: "Le nouveau mot de passe doit contenir au moins 8 caractères." };
-  const record = await prisma.user.findUnique({ where: { id: user.id } });
-  if (!record || !(await verifyPassword(current, record.passwordHash))) {
-    return { error: "Le mot de passe actuel est incorrect." };
-  }
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { passwordHash: await hashPassword(next) },
-  });
-  return {};
+  return savePassword(user, String(formData.get("current") ?? ""), String(formData.get("next") ?? ""));
 }

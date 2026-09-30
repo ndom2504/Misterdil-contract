@@ -70,9 +70,29 @@ export function colorFor(key: string) {
   return PALETTE[Math.abs(hash) % PALETTE.length];
 }
 
-// Notifications carry web paths; the app only has a screen for documents.
+// Notifications carry web paths; map them to the matching app screen.
 export function appRoute(href: string) {
   const match = /^\/documents\/([^/?#]+)/.exec(href);
-  if (match && match[1] !== 'nouveau') return `/documents/${match[1]}`;
+  if (match && match[1] !== 'nouveau') {
+    const query = href.includes('?') ? href.slice(href.indexOf('?') + 1) : '';
+    if (/(^|&)appel=1(&|$)/.test(query)) return `/appel/${match[1]}`;
+    if (/(^|&)onglet=discussion(&|$)/.test(query)) return `/conversation/${match[1]}`;
+    return `/documents/${match[1]}`;
+  }
+  if (href.startsWith('/signatures')) return '/';
+  if (href.startsWith('/discussions')) return '/discussions';
   return '/';
+}
+
+export function formatSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Ko`;
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} Mo`;
+}
+
+export function formatTime(value: string) {
+  const date = new Date(value);
+  const sameDay = new Date().toDateString() === date.toDateString();
+  const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  return sameDay ? time : `${date.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })} ${time}`;
 }

@@ -10,8 +10,14 @@ export type SessionUser = {
   jobTitle: string;
   profileType: string;
   onboarded: boolean;
+  avatarUrl: string;
   organization: { id: string; name: string; sector: string; kind: string; address: string; phone: string } | null;
 };
+
+// Versioned by updatedAt so clients refetch after a new upload.
+export function avatarUrl(user: { id: string; avatarPath: string; updatedAt: Date }) {
+  return user.avatarPath ? `/api/avatars/${user.id}?v=${user.updatedAt.getTime()}` : "";
+}
 
 export async function getCurrentUser(): Promise<SessionUser | null> {
   const userId = await readSessionUserId();
@@ -31,6 +37,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     jobTitle: user.jobTitle ?? "",
     profileType: user.profileType ?? "",
     onboarded: user.onboarded,
+    avatarUrl: avatarUrl(user),
     organization: user.organization
       ? {
           id: user.organization.id,

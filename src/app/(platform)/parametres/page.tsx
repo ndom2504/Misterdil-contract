@@ -1,5 +1,5 @@
 import { Card } from "@/components/ui";
-import { PasswordForm, ProfileForm } from "@/components/settings-forms";
+import { AvatarForm, PasswordForm, ProfileForm } from "@/components/settings-forms";
 import { requireUser } from "@/server/current-user";
 
 export const metadata = { title: "Paramètres" };
@@ -13,6 +13,9 @@ export default async function SettingsPage() {
       <Card className="p-6">
         <h2 className="font-semibold">Profil</h2>
         <div className="mt-4">
+          <AvatarForm name={user.name} avatarUrl={user.avatarUrl} />
+        </div>
+        <div className="mt-6">
           <ProfileForm user={{ name: user.name, jobTitle: user.jobTitle, phone: user.phone, organization: user.organization?.name ?? "" }} />
         </div>
       </Card>

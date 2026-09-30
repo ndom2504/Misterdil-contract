@@ -12,7 +12,8 @@
       "bundleIdentifier": "ca.misterdil.app",
       "supportsTablet": true,
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": ["audio"]
       }
     },
     "android": {
@@ -40,7 +41,23 @@
       "expo-secure-store",
       "expo-notifications",
       "expo-web-browser",
-      "expo-video"
+      "expo-video",
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Misterdil utilise vos photos pour votre photo de profil et les pièces jointes des ententes.",
+          "cameraPermission": "Misterdil utilise l'appareil photo pour votre photo de profil."
+        }
+      ],
+      "@livekit/react-native-expo-plugin",
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "microphonePermission": "Misterdil utilise le microphone pour les appels audio avec les parties prenantes.",
+          "cameraPermission": "Misterdil utilise l'appareil photo pendant les appels."
+        }
+      ]
     ],
     "extra": {
       "apiUrl": "https://misterdil-contract.vercel.app",

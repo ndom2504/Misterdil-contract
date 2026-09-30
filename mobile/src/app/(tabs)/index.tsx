@@ -5,12 +5,15 @@ import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'rea
 
 import { Button, Loading, Message, ProgressBar, StatusBadge } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { formatRelative } from '@/lib/format';
 import { colors, radius, space } from '@/lib/theme';
 import type { DocumentSummary } from '@/lib/types';
 
 export default function Documents() {
   const navigation = useNavigation();
+  const { me, refresh: refreshMe } = useAuth();
+  const unread = me?.unread ?? 0;
   const [documents, setDocuments] = useState<DocumentSummary[] | null>(null);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -20,10 +23,11 @@ export default function Documents() {
       const data = await api<{ documents: DocumentSummary[] }>('/api/mobile/documents');
       setDocuments(data.documents);
       setError('');
+      await refreshMe().catch(() => {});
     } catch (reason) {
       setError(errorMessage(reason));
     }
-  }, []);
+  }, [refreshMe]);
 
   useFocusEffect(
     useCallback(() => {
@@ -34,12 +38,21 @@ export default function Documents() {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <Pressable accessibilityLabel="Nouvelle entente" onPress={() => router.push('/nouveau')} hitSlop={12} style={{ marginRight: space.lg }}>
-          <Ionicons name="add-circle" size={28} color={colors.brand} />
+        <Pressable
+          accessibilityLabel={unread ? `Notifications, ${unread} non lues` : 'Notifications'}
+          onPress={() => router.push('/notifications')}
+          hitSlop={12}
+          style={{ marginRight: space.lg }}>
+          <Ionicons name="notifications-outline" size={25} color={colors.text} />
+          {unread ? (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{unread > 99 ? '99+' : unread}</Text>
+            </View>
+          ) : null}
         </Pressable>
       ),
     });
-  }, [navigation]);
+  }, [navigation, unread]);
 
   async function refresh() {
     setRefreshing(true);
@@ -109,4 +122,19 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', gap: space.md, paddingVertical: space.xl * 2, paddingHorizontal: space.lg },
   emptyTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
   emptyText: { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 20 },
+  badge: {
+    position: 'absolute',
+    top: -5,
+    right: -8,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.card,
+  },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
 });

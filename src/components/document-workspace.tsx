@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronDown, Clock, Copy, FileText, Lock, Mail, MessageSquare, PenLine, Printer, Search, Send, Sparkles, Users, Video } from "lucide-react";
+import { Check, ChevronDown, Clock, Copy, FileText, Lock, Mail, MessageSquare, PenLine, Phone, Printer, Search, Send, Sparkles, Users, Video } from "lucide-react";
 import { addComment, approveParticipation, createProposal, proposeFormulation, requestValidation, resolveProposal, saveParties, sendForSignature, sendToMembers, setDiscussionStatus, setModerator, signDocument } from "@/server/actions/collaboration";
 import { setSectionStatus, updateSectionContent } from "@/server/actions/documents";
 import { AssistantPanel } from "@/components/assistant-panel";
+import { EntenteChat } from "@/components/entente-chat";
 import { PresenceBubbles, type BubblePerson } from "@/components/presence-bubbles";
 import { ProgressBar } from "@/components/progress-bar";
 import { StatusBadge } from "@/components/status-badge";
@@ -138,6 +139,7 @@ function SendResults({ outcome, onClose }: { outcome: SendOutcome; onClose: () =
 }
 const TABS = [
   ["document", "Document", FileText],
+  ["discussion", "Chat et appel", Phone],
   ["discussions", "Discussions", MessageSquare],
   ["cahier", "Cahier des charges", FileText],
   ["participants", "Participants", Users],
@@ -168,10 +170,12 @@ function HighlightedText({ text, marks }: { text: string; marks: string[] }) {
 export function DocumentWorkspace({
   view,
   initialTab,
+  callInvite = false,
   history,
 }: {
   view: View;
   initialTab: string;
+  callInvite?: boolean;
   history: { role: string; content: string }[];
 }) {
   const router = useRouter();
@@ -680,6 +684,8 @@ export function DocumentWorkspace({
           </div>
         </div>
       ) : null}
+
+      {tab === "discussion" ? <EntenteChat documentId={view.id} currentUserId={view.currentUserId} callInvite={callInvite} /> : null}
 
       {tab === "discussions" ? (
         <div className="space-y-4">

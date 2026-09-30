@@ -12,10 +12,10 @@ export function blobConfigured() {
   return Boolean(process.env.BLOB_STORE_ID && (process.env.VERCEL || process.env.VERCEL_OIDC_TOKEN));
 }
 
-export async function storeFile(extension: string, bytes: Buffer, contentType: string) {
+export async function storeFile(extension: string, bytes: Buffer, contentType: string, folder = "attachments") {
   const name = `${crypto.randomUUID()}.${extension}`;
   if (blobConfigured()) {
-    const blob = await put(`attachments/${name}`, bytes, { access: "private", contentType, addRandomSuffix: false });
+    const blob = await put(`${folder}/${name}`, bytes, { access: "private", contentType, addRandomSuffix: false });
     return `${BLOB_PREFIX}${blob.pathname}`;
   }
   if (process.env.VERCEL) throw new Error("Aucun store Vercel Blob n'est relié au projet.");
