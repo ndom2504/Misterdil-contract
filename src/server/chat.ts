@@ -7,6 +7,10 @@ import { callParticipants, callToken, livekitConfigured } from "@/server/livekit
 import { REACTIONS } from "@/lib/palette";
 import { sendPush } from "@/server/push";
 import { listDocuments } from "@/server/queries";
+import { removeFile } from "@/server/storage";
+import type { StoredUpload } from "@/server/uploads";
+
+export type ChatFile = { name: string; type: string; size: number; url: string };
 
 export type ChatMessage = {
   id: string;
@@ -15,6 +19,7 @@ export type ChatMessage = {
   authorAvatar: string;
   body: string;
   kind: string;
+  file: ChatFile | null;
   createdAt: string;
 };
 
@@ -23,6 +28,23 @@ const MAX_LENGTH = 2000;
 
 export function chatHref(documentId: string, call = false) {
   return `/documents/${documentId}?onglet=discussion${call ? "&appel=1" : ""}`;
+}
+
+export function chatFileUrl(documentId: string, messageId: string) {
+  return `/api/documents/${documentId}/messages/${messageId}/file`;
+}
+
+function preview(message: { kind: string; body: string; fileName: string }) {
+  if (message.kind === "FILE") return message.body ? `📎 ${message.body}` : `📎 ${message.fileName}`;
+  return message.body;
+}
+
+async function clearedAt(documentId: string, userId: string) {
+  const clear = await prisma.chatClear.findUnique({
+    where: { documentId_userId: { documentId, userId } },
+    select: { clearedAt: true },
+  });
+  return clear?.clearedAt ?? null;
 }
 
 async function documentHeader(documentId: string) {
@@ -39,20 +61,28 @@ async function documentHeader(documentId: string) {
 
 const messageSelect = {
   id: true,
+  documentId: true,
   authorId: true,
   authorName: true,
   body: true,
   kind: true,
+  fileName: true,
+  fileType: true,
+  fileSize: true,
   createdAt: true,
   author: { select: { id: true, avatarPath: true, updatedAt: true } },
 } as const;
 
 function toMessage(item: {
   id: string;
+  documentId: string;
   authorId: string | null;
   authorName: string;
   body: string;
   kind: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
   createdAt: Date;
   author: { id: string; avatarPath: string; updatedAt: Date } | null;
 }): ChatMessage {
@@ -63,32 +93,50 @@ function toMessage(item: {
     authorAvatar: item.author ? avatarUrl(item.author) : "",
     body: item.body,
     kind: item.kind,
+    file:
+      item.kind === "FILE"
+        ? { name: item.fileName, type: item.fileType, size: item.fileSize, url: chatFileUrl(item.documentId, item.id) }
+        : null,
     createdAt: item.createdAt.toISOString(),
   };
 }
 
 export async function listConversations(user: SessionUser) {
   const documents = await listDocuments(user);
-  const latest = documents.length
-    ? await prisma.message.findMany({
-        where: { documentId: { in: documents.map((document) => document.id) } },
-        orderBy: { createdAt: "desc" },
-        distinct: ["documentId"],
-        select: { documentId: true, authorId: true, authorName: true, body: true, kind: true, createdAt: true },
-      })
-    : [];
+  const ids = documents.map((document) => document.id);
+  const [latest, clears] = ids.length
+    ? await Promise.all([
+        prisma.message.findMany({
+          where: { documentId: { in: ids } },
+          orderBy: { createdAt: "desc" },
+          distinct: ["documentId"],
+          select: { documentId: true, authorId: true, authorName: true, body: true, kind: true, fileName: true, createdAt: true },
+        }),
+        prisma.chatClear.findMany({ where: { userId: user.id, documentId: { in: ids } }, select: { documentId: true, clearedAt: true } }),
+      ])
+    : [[], []];
   const byDocument = new Map(latest.map((item) => [item.documentId, item]));
+  const clearedBy = new Map(clears.map((item) => [item.documentId, item.clearedAt]));
   return documents
     .map((document) => {
-      const last = byDocument.get(document.id);
+      const found = byDocument.get(document.id);
+      const cleared = clearedBy.get(document.id);
+      const last = found && (!cleared || found.createdAt > cleared) ? found : null;
       return {
         documentId: document.id,
         title: document.title,
         typeLabel: document.typeLabel,
         status: document.status,
+        color: document.color,
         participants: document.participants,
+        canManage: document.canManage,
         lastMessage: last
-          ? { authorName: last.authorId === user.id ? "Vous" : last.authorName, body: last.body, kind: last.kind, createdAt: last.createdAt.toISOString() }
+          ? {
+              authorName: last.authorId === user.id ? "Vous" : last.authorName,
+              body: preview(last),
+              kind: last.kind,
+              createdAt: last.createdAt.toISOString(),
+            }
           : null,
         updatedAt: last ? last.createdAt.toISOString() : document.updatedAt,
       };
@@ -133,9 +181,10 @@ export async function toggleReaction(user: SessionUser, documentId: string, mess
   if (!(REACTIONS as readonly string[]).includes(emoji)) return { ok: false as const, error: "Réaction inconnue." };
   const message = await prisma.message.findFirst({
     where: { id: messageId, documentId },
-    select: { id: true, authorId: true, body: true, kind: true },
+    select: { id: true, authorId: true, body: true, kind: true, fileName: true },
   });
   if (!message) return { ok: false as const, error: "Message introuvable." };
+  const quoted = preview(message);
 
   const removed = await prisma.messageReaction.deleteMany({ where: { messageId, userId: user.id, emoji } });
   if (!removed.count) {
@@ -148,12 +197,12 @@ export async function toggleReaction(user: SessionUser, documentId: string, mess
     if (authorId && authorId !== user.id) {
       after(async () => {
         const header = await documentHeader(documentId);
-        const preview = message.body.length > 60 ? `${message.body.slice(0, 57)}...` : message.body;
+        const short = quoted.length > 60 ? `${quoted.slice(0, 57)}...` : quoted;
         await notifyUser({
           userId: authorId,
           kind: "REACTION",
           title: `${user.name} a réagi ${emoji}`,
-          body: `À votre message « ${preview} »${header ? ` dans « ${header.title} »` : ""}.`,
+          body: `À votre message « ${short} »${header ? ` dans « ${header.title} »` : ""}.`,
           href: chatHref(documentId),
         });
       });
@@ -164,21 +213,28 @@ export async function toggleReaction(user: SessionUser, documentId: string, mess
 }
 
 // `after` is inclusive so messages written in the same millisecond are never skipped; clients dedupe by id.
+// clearedAt comes back on every poll so the user's other devices also hide what they cleared.
+// A CLEAR message tells every client to drop the messages before it.
 export async function listMessages(user: SessionUser, documentId: string, after?: string) {
   const access = await documentAccess(documentId, user);
   if (!access) return null;
   const since = after ? new Date(after) : null;
+  const cleared = await clearedAt(documentId, user.id);
+  const createdAt = {
+    ...(since && !Number.isNaN(since.getTime()) ? { gte: since } : {}),
+    ...(cleared ? { gt: cleared } : {}),
+  };
   const rows =
     since && !Number.isNaN(since.getTime())
       ? await prisma.message.findMany({
-          where: { documentId, createdAt: { gte: since } },
+          where: { documentId, createdAt },
           orderBy: { createdAt: "asc" },
           take: HISTORY,
           select: messageSelect,
         })
       : (
           await prisma.message.findMany({
-            where: { documentId },
+            where: { documentId, createdAt },
             orderBy: { createdAt: "desc" },
             take: HISTORY,
             select: messageSelect,
@@ -194,30 +250,87 @@ export async function listMessages(user: SessionUser, documentId: string, after?
     messages: rows.map(toMessage),
     reactions,
     call,
+    clearedAt: cleared?.toISOString() ?? null,
+    canManage: access.access.isModerator,
     serverTime: new Date().toISOString(),
   };
 }
 
-export async function postMessage(user: SessionUser, documentId: string, text: string) {
+export async function postMessage(user: SessionUser, documentId: string, text: string, file?: StoredUpload) {
   const access = await documentAccess(documentId, user);
   if (!access) return { ok: false as const, error: "Conversation inaccessible." };
   const body = text.trim().slice(0, MAX_LENGTH);
-  if (!body) return { ok: false as const, error: "Écrivez un message." };
+  if (!body && !file) return { ok: false as const, error: "Écrivez un message." };
   const header = await documentHeader(documentId);
   if (!header) return { ok: false as const, error: "Conversation inaccessible." };
 
   const created = await prisma.message.create({
-    data: { documentId, authorId: user.id, authorName: user.name, body },
+    data: {
+      documentId,
+      authorId: user.id,
+      authorName: user.name,
+      body,
+      ...(file
+        ? { kind: "FILE", fileName: file.name, fileType: file.mimeType, fileSize: file.size, filePath: file.storagePath }
+        : {}),
+    },
     select: messageSelect,
   });
   after(async () => {
-    const preview = body.length > 140 ? `${body.slice(0, 137)}...` : body;
+    const text = preview({ kind: created.kind, body, fileName: created.fileName });
+    const short = text.length > 140 ? `${text.slice(0, 137)}...` : text;
     for (const memberId of header.members) {
       if (memberId === user.id) continue;
-      await sendPush(memberId, { title: `${user.name} · ${header.title}`, body: preview, href: chatHref(documentId), kind: "MESSAGE" });
+      await sendPush(memberId, { title: `${user.name} · ${header.title}`, body: short, href: chatHref(documentId), kind: "MESSAGE" });
     }
   });
   return { ok: true as const, message: toMessage(created) };
+}
+
+export async function clearHistory(user: SessionUser, documentId: string, scope: "me" | "all") {
+  const access = await documentAccess(documentId, user);
+  if (!access) return { ok: false as const, error: "Conversation inaccessible." };
+
+  if (scope === "me") {
+    const now = new Date();
+    await prisma.chatClear.upsert({
+      where: { documentId_userId: { documentId, userId: user.id } },
+      update: { clearedAt: now },
+      create: { documentId, userId: user.id, clearedAt: now },
+    });
+    return { ok: true as const };
+  }
+
+  if (!access.access.isModerator) return { ok: false as const, error: "Seul le modérateur peut supprimer l'historique pour tous." };
+  const files = await prisma.message.findMany({ where: { documentId, filePath: { not: "" } }, select: { filePath: true } });
+  const notice = `${user.name} a supprimé l'historique de la discussion.`;
+  await prisma.$transaction([
+    prisma.message.deleteMany({ where: { documentId } }),
+    prisma.message.create({ data: { documentId, authorId: user.id, authorName: user.name, body: notice, kind: "CLEAR" } }),
+  ]);
+  after(async () => {
+    for (const file of files) await removeFile(file.filePath);
+    await recordActivity({
+      workspaceId: access.document.workspaceId,
+      documentId,
+      actorId: user.id,
+      actorName: user.name,
+      kind: "DELETE",
+      message: notice,
+    });
+  });
+  return { ok: true as const };
+}
+
+export async function messageFile(user: SessionUser, documentId: string, messageId: string) {
+  const access = await documentAccess(documentId, user);
+  if (!access) return null;
+  const message = await prisma.message.findFirst({
+    where: { id: messageId, documentId, kind: "FILE" },
+    select: { fileName: true, fileType: true, filePath: true },
+  });
+  if (!message?.filePath) return null;
+  return { name: message.fileName, type: message.fileType, path: message.filePath };
 }
 
 export async function startCall(user: SessionUser, documentId: string) {

@@ -36,6 +36,7 @@ export type DocumentSummary = {
   participants: number;
   progress: Progress;
   owned: boolean;
+  canManage?: boolean;
   color?: string;
 };
 
@@ -137,10 +138,14 @@ export type Conversation = {
   title: string;
   typeLabel: string;
   status: string;
+  color?: string;
   participants: number;
+  canManage?: boolean;
   lastMessage: { authorName: string; body: string; kind: string; createdAt: string } | null;
   updatedAt: string;
 };
+
+export type ChatFile = { name: string; type: string; size: number; url: string };
 
 export type ChatMessage = {
   id: string;
@@ -149,6 +154,7 @@ export type ChatMessage = {
   authorAvatar: string;
   body: string;
   kind: string;
+  file?: ChatFile | null;
   createdAt: string;
 };
 

@@ -44,6 +44,7 @@ model User {
   sectionLikes   SectionLike[]
   sectionViews   SectionView[]
   messageReactions MessageReaction[]
+  chatClears     ChatClear[]
 }
 
 model PushToken {
@@ -178,13 +179,14 @@ model Document {
   attachments     Attachment[]
   aiMessages      AiInteraction[]
   messages        Message[]
+  chatClears      ChatClear[]
 
   @@index([workspaceId])
   @@index([status])
 }
 
-// Group chat of an agreement, shared by all its stakeholders. kind is TEXT or CALL
-// (a call started in the agreement's audio room).
+// Group chat of an agreement, shared by all its stakeholders. kind is TEXT, FILE (a shared
+// file, body is its optional caption) or CALL (a call started in the agreement's audio room).
 model Message {
   id         String   @id @default(cuid())
   documentId String
@@ -194,10 +196,26 @@ model Message {
   authorName String
   body       String
   kind       String   @default("TEXT")
+  fileName   String   @default("")
+  fileType   String   @default("")
+  fileSize   Int      @default(0)
+  filePath   String   @default("")
   createdAt  DateTime @default(now())
   reactions  MessageReaction[]
 
   @@index([documentId, createdAt])
+}
+
+// "Clear for me": the user no longer sees the messages written up to clearedAt.
+model ChatClear {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clearedAt  DateTime @default(now())
+
+  @@unique([documentId, userId])
 }
 
 model MessageReaction {

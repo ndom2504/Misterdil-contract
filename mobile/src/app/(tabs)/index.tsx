@@ -8,6 +8,7 @@ import { Button, Loading, Message, ProgressBar, StatusBadge } from '@/components
 import { api, errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatRelative } from '@/lib/format';
+import { deleteDocumentAction } from '@/lib/manage';
 import { paletteColor } from '@/lib/palette';
 import { colors, radius, space } from '@/lib/theme';
 import type { DocumentSummary } from '@/lib/types';
@@ -134,13 +135,19 @@ export default function Documents() {
       }}
       ListFooterComponent={
         <>
-          {documents?.length ? <Text style={styles.tip}>Astuce : appui long sur une entente pour lui attribuer une couleur.</Text> : null}
+          {documents?.length ? <Text style={styles.tip}>Astuce : appui long sur une entente pour changer sa couleur ou la supprimer.</Text> : null}
           <ColorPickerSheet
             visible={Boolean(picking)}
-            title={picking ? `Couleur de « ${picking.title} »` : ''}
+            title={picking ? `Réglages de « ${picking.title} »` : ''}
             value={picking?.color ?? ''}
             onClose={() => setPicking(null)}
             onPick={(color) => void pickColor(color)}
+            actions={
+              picking?.canManage
+                ? [deleteDocumentAction(picking, () => setDocuments((current) => current?.filter((item) => item.id !== picking.id) ?? current))]
+                : []
+            }
+            note={picking && !picking.canManage ? "Seul le modérateur de l'entente peut la supprimer." : undefined}
           />
         </>
       }

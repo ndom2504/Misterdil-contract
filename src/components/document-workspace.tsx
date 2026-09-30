@@ -338,6 +338,21 @@ export function DocumentWorkspace({
     });
   }
 
+  function removeDocument() {
+    if (!window.confirm(`Supprimer définitivement « ${view.title} » ?\n\nToutes les sections, la discussion et les fichiers seront effacés pour toutes les parties. Cette action est irréversible.`)) return;
+    setError("");
+    startTransition(async () => {
+      const response = await fetch(`/api/documents/${view.id}`, { method: "DELETE" }).catch(() => null);
+      if (!response?.ok) {
+        const data = (await response?.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "L'entente n'a pas pu être supprimée.");
+        return;
+      }
+      router.push("/documents");
+      router.refresh();
+    });
+  }
+
   function run(task: () => Promise<{ ok: boolean; error?: string }>) {
     setError("");
     startTransition(async () => {
@@ -399,7 +414,14 @@ export function DocumentWorkspace({
               {organizations.map((name) => <span key={name} className="rounded-full bg-[#eef3f8] px-2.5 py-1 text-xs text-[#3f4854]">{name}</span>)}
               <StatusBadge status={view.status} />
               {view.access.canWrite ? (
-                <ColorPicker endpoint={`/api/documents/${view.id}/color`} value={view.color} label="Couleur de l'entente" compact />
+                <ColorPicker
+                  endpoint={`/api/documents/${view.id}/color`}
+                  value={view.color}
+                  label="Réglages de l'entente"
+                  compact
+                  actions={view.access.isModerator ? [{ label: "Supprimer l'entente", hint: "Sections, discussion et fichiers seront effacés", destructive: true, onSelect: removeDocument }] : []}
+                  note={view.access.isModerator ? undefined : "Seul un modérateur peut supprimer cette entente."}
+                />
               ) : null}
             </div>
           </div>

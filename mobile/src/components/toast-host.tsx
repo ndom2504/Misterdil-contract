@@ -18,6 +18,7 @@ const ICONS: Record<string, { name: keyof typeof Ionicons.glyphMap; color: strin
   COMMENT: { name: 'chatbubble-ellipses', color: colors.brand },
   MESSAGE: { name: 'chatbubbles', color: colors.brand },
   CALL: { name: 'call', color: colors.success },
+  DELETE: { name: 'trash', color: colors.danger },
 };
 
 // Foreground pushes become an in-app pop-up with the Misterdil chime; a push about the

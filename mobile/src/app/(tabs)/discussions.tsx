@@ -3,9 +3,12 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
+import { ColorPickerSheet } from '@/components/color-picker';
 import { Loading, Message } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { colorFor, formatRelative, initials } from '@/lib/format';
+import { historyActions } from '@/lib/manage';
+import { paletteColor } from '@/lib/palette';
 import { colors, radius, space } from '@/lib/theme';
 import type { Conversation } from '@/lib/types';
 
@@ -13,6 +16,7 @@ export default function Discussions() {
   const [items, setItems] = useState<Conversation[] | null>(null);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [managing, setManaging] = useState<Conversation | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -58,31 +62,48 @@ export default function Discussions() {
           </View>
         ) : null
       }
-      renderItem={({ item }) => (
-        <Pressable
-          onPress={() => router.push(`/conversation/${item.documentId}`)}
-          style={({ pressed }) => [styles.item, pressed && { opacity: 0.85 }]}>
-          <View style={[styles.icon, { backgroundColor: colorFor(item.title) }]}>
-            <Text style={styles.iconText}>{initials(item.title)}</Text>
-          </View>
-          <View style={{ flex: 1, gap: 2 }}>
-            <View style={styles.top}>
-              <Text style={styles.title} numberOfLines={1}>
-                {item.title}
-              </Text>
-              <Text style={styles.time}>{formatRelative(item.updatedAt)}</Text>
+      renderItem={({ item }) => {
+        const tint = paletteColor(item.color);
+        return (
+          <Pressable
+            onPress={() => router.push(`/conversation/${item.documentId}`)}
+            onLongPress={() => setManaging(item)}
+            delayLongPress={350}
+            style={({ pressed }) => [styles.item, pressed && { opacity: 0.85 }]}>
+            <View style={[styles.icon, { backgroundColor: tint?.hex ?? colorFor(item.title) }]}>
+              <Text style={styles.iconText}>{initials(item.title)}</Text>
             </View>
-            <Text style={styles.preview} numberOfLines={2}>
-              {item.lastMessage?.kind === 'CALL' ? <Ionicons name="call-outline" size={13} color={colors.muted} /> : null}
-              {item.lastMessage
-                ? item.lastMessage.kind === 'CALL'
-                  ? ` ${item.lastMessage.body}`
-                  : `${item.lastMessage.authorName} : ${item.lastMessage.body}`
-                : `${item.typeLabel} · ${item.participants} partie${item.participants > 1 ? 's' : ''} prenante${item.participants > 1 ? 's' : ''}`}
-            </Text>
-          </View>
-        </Pressable>
-      )}
+            <View style={{ flex: 1, gap: 2 }}>
+              <View style={styles.top}>
+                <Text style={styles.title} numberOfLines={1}>
+                  {item.title}
+                </Text>
+                <Text style={styles.time}>{formatRelative(item.updatedAt)}</Text>
+              </View>
+              <Text style={styles.preview} numberOfLines={2}>
+                {item.lastMessage?.kind === 'CALL' ? <Ionicons name="call-outline" size={13} color={colors.muted} /> : null}
+                {item.lastMessage
+                  ? item.lastMessage.kind === 'CALL' || item.lastMessage.kind === 'CLEAR'
+                    ? ` ${item.lastMessage.body}`
+                    : `${item.lastMessage.authorName} : ${item.lastMessage.body}`
+                  : `${item.typeLabel} · ${item.participants} partie${item.participants > 1 ? 's' : ''} prenante${item.participants > 1 ? 's' : ''}`}
+              </Text>
+            </View>
+          </Pressable>
+        );
+      }}
+      ListFooterComponent={
+        <>
+          {items?.length ? <Text style={styles.tip}>Astuce : appui long sur une discussion pour gérer son historique.</Text> : null}
+          <ColorPickerSheet
+            visible={Boolean(managing)}
+            title={managing ? `Discussion « ${managing.title} »` : ''}
+            onClose={() => setManaging(null)}
+            actions={managing ? historyActions(managing.documentId, Boolean(managing.canManage), () => void load()) : []}
+            note={managing && !managing.canManage ? "Seul le modérateur peut supprimer l'historique pour toutes les parties." : undefined}
+          />
+        </>
+      }
     />
   );
 }
@@ -105,6 +126,7 @@ const styles = StyleSheet.create({
   title: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.text },
   time: { fontSize: 12, color: colors.faint },
   preview: { fontSize: 14, color: colors.muted, lineHeight: 19 },
+  tip: { fontSize: 12, color: colors.faint, textAlign: 'center', marginTop: space.sm },
   empty: { alignItems: 'center', gap: space.md, paddingVertical: space.xl * 2, paddingHorizontal: space.lg },
   emptyTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
   emptyText: { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 20 },

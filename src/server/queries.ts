@@ -35,6 +35,7 @@ export type DocumentSummary = {
   progress: ProgressStats;
   description: string;
   owned: boolean;
+  canManage: boolean;
   color: string;
 };
 
@@ -90,6 +91,7 @@ export async function listDocuments(user: SessionUser): Promise<DocumentSummary[
         progress: progressFromSections(document.sections),
         description: document.description,
         owned: document.moderatorId === user.id || document.createdById === user.id,
+        canManage: access.isModerator,
         color: document.color,
       });
     }

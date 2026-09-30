@@ -12,6 +12,7 @@ import { Button, Card, Loading, Message, ProgressBar, SectionTitle, StatusBadge 
 import { api, errorMessage } from '@/lib/api';
 import { ententePdf, openRemoteFile, pickAndUpload } from '@/lib/files';
 import { formatRelative, partyLabel, roleLabel } from '@/lib/format';
+import { deleteDocumentAction } from '@/lib/manage';
 import { paletteColor } from '@/lib/palette';
 import { colors, radius, space } from '@/lib/theme';
 import type { DocumentView, InvitationLink, ShareResult, SyncSection } from '@/lib/types';
@@ -174,11 +175,12 @@ export default function DocumentScreen() {
             {view.access.canWrite ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Couleur de l'entente"
+                accessibilityLabel="Réglages de l'entente : couleur et suppression"
                 onPress={() => setPicking('entente')}
                 style={({ pressed }) => [styles.colorChip, pressed && { opacity: 0.8 }]}>
                 <ColorDot value={view.color} />
                 <Text style={styles.colorChipText}>{tint ? tint.label : 'Couleur'}</Text>
+                {view.access.isModerator ? <Ionicons name="ellipsis-horizontal" size={14} color={colors.muted} /> : null}
               </Pressable>
             ) : null}
           </View>
@@ -305,12 +307,17 @@ export default function DocumentScreen() {
         visible={Boolean(picking)}
         title={
           picking === 'entente'
-            ? "Couleur de l'entente"
+            ? "Réglages de l'entente"
             : `Couleur de « ${sections.find((item) => item.id === picking)?.title ?? 'la section'} »`
         }
         value={(picking === 'entente' ? view.color : sections.find((item) => item.id === picking)?.color) ?? ''}
         onClose={() => setPicking(null)}
         onPick={(color) => void applyColor(color)}
+        actions={
+          picking === 'entente' && view.access.isModerator
+            ? [deleteDocumentAction(view, () => (router.canGoBack() ? router.back() : router.replace('/')))]
+            : []
+        }
       />
 
       {tab === 'participants' ? (

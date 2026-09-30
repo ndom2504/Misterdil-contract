@@ -2,9 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Check, Palette } from "lucide-react";
+import { Check, EyeOff, Palette, Trash2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { PALETTE, paletteColor } from "@/lib/palette";
+
+export type MenuAction = { label: string; hint?: string; destructive?: boolean; onSelect: () => void };
 
 type Props = {
   endpoint: string;
@@ -12,7 +14,36 @@ type Props = {
   label: string;
   compact?: boolean;
   onChange?: (color: string) => void;
+  actions?: MenuAction[];
+  note?: string;
 };
+
+export function MenuActions({ actions, onDone }: { actions: MenuAction[]; onDone: () => void }) {
+  return (
+    <div className="space-y-0.5">
+      {actions.map((action) => (
+        <button
+          key={action.label}
+          type="button"
+          onClick={() => {
+            onDone();
+            action.onSelect();
+          }}
+          className={cn(
+            "flex w-full items-start gap-2 rounded-xl px-2 py-1.5 text-left hover:bg-[#f5f7fb]",
+            action.destructive ? "text-[#b42318]" : "text-[#10233f]",
+          )}
+        >
+          {action.destructive ? <Trash2 className="mt-0.5 h-4 w-4 shrink-0" /> : <EyeOff className="mt-0.5 h-4 w-4 shrink-0 text-[#2f6fed]" />}
+          <span>
+            <span className="block text-sm font-medium">{action.label}</span>
+            {action.hint ? <span className="block text-[11px] text-[#8b939e]">{action.hint}</span> : null}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function ColorDot({ value, className }: { value: string; className?: string }) {
   const color = paletteColor(value);
@@ -25,7 +56,7 @@ export function ColorDot({ value, className }: { value: string; className?: stri
 }
 
 // The colour is shared by every party, so it is saved at once rather than kept locally.
-export function ColorPicker({ endpoint, value, label, compact = false, onChange }: Props) {
+export function ColorPicker({ endpoint, value, label, compact = false, onChange, actions = [], note }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [current, setCurrent] = useState(value);
@@ -109,6 +140,12 @@ export function ColorPicker({ endpoint, value, label, compact = false, onChange 
               Ø
             </button>
           </div>
+          {actions.length ? (
+            <div className="mt-3 border-t border-[#eef2f7] pt-2">
+              <MenuActions actions={actions} onDone={() => setOpen(false)} />
+            </div>
+          ) : null}
+          {note ? <p className="mt-2 text-[11px] text-[#8b939e]">{note}</p> : null}
         </div>
       ) : null}
       {error ? <p className="absolute right-0 mt-1 w-56 text-right text-[11px] text-[#9f2d2d]">{error}</p> : null}

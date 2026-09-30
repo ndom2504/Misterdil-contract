@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { changePassword, updateProfile, type FormState } from "@/server/actions/auth";
 import { Button, Field, controlClass } from "@/components/ui";
 import { UserAvatar } from "@/components/user-avatar";
+import { shrinkImage, uploadDirect } from "@/lib/upload";
 
 export function AvatarForm({ name, avatarUrl }: { name: string; avatarUrl: string }) {
   const router = useRouter();
@@ -12,16 +13,32 @@ export function AvatarForm({ name, avatarUrl }: { name: string; avatarUrl: strin
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
-  async function submit(request: Promise<Response>) {
+  async function submit(request: () => Promise<Response>) {
     setPending(true);
     setError("");
-    const response = await request;
-    if (!response.ok) {
-      const data = (await response.json().catch(() => null)) as { error?: string } | null;
-      setError(data?.error ?? "La photo n'a pas pu être enregistrée.");
+    try {
+      const response = await request();
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "La photo n'a pas pu être enregistrée.");
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "La photo n'a pas pu être enregistrée.");
     }
     setPending(false);
     router.refresh();
+  }
+
+  async function upload(file: File) {
+    const image = await shrinkImage(file).catch(() => file);
+    const name = image === file ? file.name : "photo.jpg";
+    const pathname = await uploadDirect(image, name, { purpose: "avatar" });
+    if (pathname) {
+      return fetch("/api/avatar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pathname }) });
+    }
+    const form = new FormData();
+    form.append("file", image, name);
+    return fetch("/api/avatar", { method: "POST", body: form });
   }
 
   return (
@@ -33,12 +50,12 @@ export function AvatarForm({ name, avatarUrl }: { name: string; avatarUrl: strin
             {pending ? "Envoi…" : avatarUrl ? "Changer la photo" : "Ajouter une photo"}
           </Button>
           {avatarUrl ? (
-            <Button type="button" variant="secondary" disabled={pending} onClick={() => void submit(fetch("/api/avatar", { method: "DELETE" }))}>
+            <Button type="button" variant="secondary" disabled={pending} onClick={() => void submit(() => fetch("/api/avatar", { method: "DELETE" }))}>
               Retirer
             </Button>
           ) : null}
         </div>
-        <p className="text-xs text-[#8b939e]">JPG, PNG ou WebP, 5 Mo maximum. Visible par les parties de vos ententes.</p>
+        <p className="text-xs text-[#8b939e]">JPG, PNG ou WebP, 10 Mo maximum. Visible par les parties de vos ententes.</p>
         {error ? <p className="text-sm text-[#9f2d2d]">{error}</p> : null}
       </div>
       <input
@@ -50,9 +67,7 @@ export function AvatarForm({ name, avatarUrl }: { name: string; avatarUrl: strin
           const file = event.target.files?.[0];
           event.target.value = "";
           if (!file) return;
-          const form = new FormData();
-          form.append("file", file);
-          void submit(fetch("/api/avatar", { method: "POST", body: form }));
+          void submit(() => upload(file));
         }}
       />
     </div>

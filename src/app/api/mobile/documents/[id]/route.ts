@@ -1,5 +1,15 @@
+import { deleteDocument } from "@/server/deletion";
 import { failure, mobileUser, reply } from "@/server/mobile";
 import { getDocumentView } from "@/server/queries";
+
+export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+  const user = await mobileUser();
+  if (!user) return failure("Non autorisé.", 401);
+  const result = await deleteDocument(user, id);
+  if (!result.ok) return failure(result.error, 403);
+  return reply(result);
+}
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;

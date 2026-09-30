@@ -1,19 +1,31 @@
 import { Ionicons } from '@expo/vector-icons';
+import type { ComponentProps } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PALETTE, paletteColor } from '@/lib/palette';
 import { colors, radius, space } from '@/lib/theme';
 
+export type SheetAction = {
+  label: string;
+  icon: ComponentProps<typeof Ionicons>['name'];
+  onPress: () => void;
+  hint?: string;
+  destructive?: boolean;
+};
+
 type Props = {
   visible: boolean;
   title: string;
-  value: string;
-  onPick: (key: string) => void;
   onClose: () => void;
+  value?: string;
+  onPick?: (key: string) => void;
+  actions?: SheetAction[];
+  note?: string;
 };
 
-export function ColorPickerSheet({ visible, title, value, onPick, onClose }: Props) {
+// Without onPick the sheet only lists the actions (settings of a conversation, for example).
+export function ColorPickerSheet({ visible, title, value = '', onPick, onClose, actions = [], note }: Props) {
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -21,34 +33,68 @@ export function ColorPickerSheet({ visible, title, value, onPick, onClose }: Pro
       <View style={[styles.sheet, { paddingBottom: insets.bottom + space.lg }]}>
         <View style={styles.grabber} />
         <Text style={styles.title}>{title}</Text>
-        <Text style={styles.hint}>La couleur est visible par toutes les parties de l&apos;entente.</Text>
-        <View style={styles.grid}>
-          {PALETTE.map((item) => {
-            const selected = item.key === value;
-            return (
+        {onPick ? (
+          <>
+            <Text style={styles.hint}>La couleur est visible par toutes les parties de l&apos;entente.</Text>
+            <Palette value={value} onPick={onPick} />
+          </>
+        ) : null}
+        {actions.length ? (
+          <View style={[styles.actions, onPick && styles.actionsSeparated]}>
+            {actions.map((action) => (
               <Pressable
-                key={item.key}
+                key={action.label}
                 accessibilityRole="button"
-                accessibilityState={{ selected }}
-                accessibilityLabel={item.label}
-                onPress={() => onPick(item.key)}
-                style={styles.cell}>
-                <View style={[styles.swatch, { backgroundColor: item.hex }, selected && styles.swatchSelected]}>
-                  {selected ? <Ionicons name="checkmark" size={22} color="#fff" /> : null}
+                onPress={() => {
+                  onClose();
+                  // iOS drops an alert presented while the sheet is still sliding away.
+                  setTimeout(action.onPress, 350);
+                }}
+                style={({ pressed }) => [styles.action, pressed && { backgroundColor: colors.background }]}>
+                <View style={[styles.actionIcon, action.destructive && styles.actionIconDanger]}>
+                  <Ionicons name={action.icon} size={19} color={action.destructive ? colors.danger : colors.brand} />
                 </View>
-                <Text style={styles.label}>{item.label}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.actionLabel, action.destructive && { color: colors.danger }]}>{action.label}</Text>
+                  {action.hint ? <Text style={styles.actionHint}>{action.hint}</Text> : null}
+                </View>
               </Pressable>
-            );
-          })}
-          <Pressable accessibilityRole="button" accessibilityLabel="Sans couleur" onPress={() => onPick('')} style={styles.cell}>
-            <View style={[styles.swatch, styles.none, !value && styles.swatchSelected]}>
-              <Ionicons name={value ? 'close' : 'checkmark'} size={20} color={colors.muted} />
-            </View>
-            <Text style={styles.label}>Aucune</Text>
-          </Pressable>
-        </View>
+            ))}
+          </View>
+        ) : null}
+        {note ? <Text style={styles.note}>{note}</Text> : null}
       </View>
     </Modal>
+  );
+}
+
+function Palette({ value, onPick }: { value: string; onPick: (key: string) => void }) {
+  return (
+    <View style={styles.grid}>
+      {PALETTE.map((item) => {
+        const selected = item.key === value;
+        return (
+          <Pressable
+            key={item.key}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+            accessibilityLabel={item.label}
+            onPress={() => onPick(item.key)}
+            style={styles.cell}>
+            <View style={[styles.swatch, { backgroundColor: item.hex }, selected && styles.swatchSelected]}>
+              {selected ? <Ionicons name="checkmark" size={22} color="#fff" /> : null}
+            </View>
+            <Text style={styles.label}>{item.label}</Text>
+          </Pressable>
+        );
+      })}
+      <Pressable accessibilityRole="button" accessibilityLabel="Sans couleur" onPress={() => onPick('')} style={styles.cell}>
+        <View style={[styles.swatch, styles.none, !value && styles.swatchSelected]}>
+          <Ionicons name={value ? 'close' : 'checkmark'} size={20} color={colors.muted} />
+        </View>
+        <Text style={styles.label}>Aucune</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -88,4 +134,12 @@ const styles = StyleSheet.create({
   swatchSelected: { borderWidth: 3, borderColor: '#fff', shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, elevation: 4 },
   none: { backgroundColor: colors.background, borderWidth: 1.5, borderColor: colors.border, borderStyle: 'dashed' },
   label: { fontSize: 11, color: colors.muted },
+  actions: { gap: 2, marginTop: space.sm },
+  actionsSeparated: { marginTop: space.lg, paddingTop: space.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  action: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.sm, paddingHorizontal: space.xs, borderRadius: radius.md },
+  actionIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brandSoft },
+  actionIconDanger: { backgroundColor: colors.dangerSoft },
+  actionLabel: { fontSize: 15, fontWeight: '600', color: colors.text },
+  actionHint: { fontSize: 12, color: colors.muted, marginTop: 1 },
+  note: { fontSize: 12, color: colors.faint, marginTop: space.xs },
 });

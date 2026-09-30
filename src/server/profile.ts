@@ -1,7 +1,9 @@
-import type { SessionUser } from "@/server/current-user";
+import { after } from "next/server";
+import { avatarUrl, type SessionUser } from "@/server/current-user";
 import { prisma } from "@/server/db";
 import { hashPassword, verifyPassword } from "@/server/password";
-import { storeFile } from "@/server/storage";
+import { removeFile } from "@/server/storage";
+import type { StoredUpload } from "@/server/uploads";
 
 export type ProfileInput = { name: string; jobTitle: string; phone: string; organization: string };
 
@@ -29,28 +31,19 @@ export async function savePassword(user: SessionUser, current: string, next: str
   return {};
 }
 
-const AVATAR_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
-const AVATAR_MAX = 5 * 1024 * 1024;
-
-export async function saveAvatar(user: SessionUser, file: File): Promise<{ error?: string; avatarUrl?: string }> {
-  const extension = AVATAR_TYPES[file.type];
-  if (!extension) return { error: "Choisissez une image JPG, PNG ou WebP." };
-  if (file.size > AVATAR_MAX) return { error: "L'image dépasse 5 Mo." };
-  let stored: string;
-  try {
-    stored = await storeFile(extension, Buffer.from(await file.arrayBuffer()), file.type, "avatars");
-  } catch (error) {
-    console.error("[photo-profil]", error instanceof Error ? error.message : error);
-    return { error: "La photo n'a pas pu être enregistrée. Réessayez." };
-  }
+export async function saveAvatar(user: SessionUser, stored: StoredUpload): Promise<{ avatarUrl: string }> {
+  const previous = await prisma.user.findUnique({ where: { id: user.id }, select: { avatarPath: true } });
   const updated = await prisma.user.update({
     where: { id: user.id },
-    data: { avatarPath: stored },
+    data: { avatarPath: stored.storagePath },
     select: { id: true, avatarPath: true, updatedAt: true },
   });
-  return { avatarUrl: `/api/avatars/${updated.id}?v=${updated.updatedAt.getTime()}` };
+  if (previous?.avatarPath && previous.avatarPath !== stored.storagePath) after(() => removeFile(previous.avatarPath));
+  return { avatarUrl: avatarUrl(updated) };
 }
 
 export async function removeAvatar(user: SessionUser) {
+  const previous = await prisma.user.findUnique({ where: { id: user.id }, select: { avatarPath: true } });
   await prisma.user.update({ where: { id: user.id }, data: { avatarPath: "" } });
+  if (previous?.avatarPath) after(() => removeFile(previous.avatarPath));
 }
