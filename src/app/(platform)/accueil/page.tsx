@@ -2,7 +2,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { Calendar, CheckCircle2, FileText, MessageSquare, PenLine, Sparkles } from "lucide-react";
 import { AssistantPanel } from "@/components/assistant-panel";
+import { DeadlineBadge } from "@/components/deadline-badge";
 import { DocumentTable } from "@/components/document-table";
+import { addDays, dayLabel, zoneDay } from "@/lib/agenda";
+import { userAgenda } from "@/server/agenda";
 import { MicrosoftWindows } from "@/components/microsoft-windows";
 import { ProgressBar } from "@/components/progress-bar";
 import { requireUser } from "@/server/current-user";
@@ -53,6 +56,59 @@ function tasksFor(documents: DocumentSummary[]) {
     }));
 }
 
+type Upcoming = Awaited<ReturnType<typeof userAgenda>>;
+
+function UpcomingCard({ agenda }: { agenda: Upcoming }) {
+  const items = [
+    ...agenda.events.map((event) => ({
+      key: event.id,
+      day: event.day,
+      sort: `${event.day}T${event.time}`,
+      title: event.title,
+      detail: `${event.kind === "MEETING" ? "Rencontre" : "Échéance"} · ${event.time.replace(":", " h ")} · ${event.documentTitle}`,
+      href: `/documents/${event.documentId}?onglet=agenda`,
+      badge: null as { dueDate: string; status: string } | null,
+    })),
+    ...agenda.deadlines.filter((deadline) => deadline.status !== "FINAL").map((deadline) => ({
+      key: `due-${deadline.documentId}`,
+      day: deadline.dueDate,
+      sort: `${deadline.dueDate}T23:59`,
+      title: deadline.title,
+      detail: "Échéance de l'entente",
+      href: `/documents/${deadline.documentId}?onglet=agenda`,
+      badge: { dueDate: deadline.dueDate, status: deadline.status },
+    })),
+  ]
+    .sort((a, b) => a.sort.localeCompare(b.sort))
+    .slice(0, 5);
+  return (
+    <section className="rounded-2xl border border-[#e6eef8] bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="font-semibold text-[#10233f]">Échéances à venir</h2>
+        <Link href="/agenda" className="text-sm text-[#2f6fed]">Agenda</Link>
+      </div>
+      <ul className="space-y-3">
+        {items.length === 0 ? <li className="text-sm text-[#6b7280]">Rien de prévu dans les 30 prochains jours.</li> : null}
+        {items.map((item) => (
+          <li key={item.key}>
+            <Link href={item.href} className="flex items-start gap-3 text-sm">
+              <span className="flex w-11 shrink-0 flex-col items-center rounded-lg bg-[#f4f7fb] py-1 text-[#10233f]">
+                <span className="text-sm font-semibold leading-4">{Number(item.day.slice(8))}</span>
+                <span className="text-[10px] text-[#6b7280]">{dayLabel(item.day, false).split(" ")[1]}</span>
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium text-[#10233f]">{item.title}</span>
+                <span className="block truncate text-xs text-[#6b7280]">{item.detail}</span>
+                {item.badge ? <DeadlineBadge dueDate={item.badge.dueDate} status={item.badge.status} className="mt-1" /> : null}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function TasksCard({ tasks }: { tasks: ReturnType<typeof tasksFor> }) {
   return (
     <section className="rounded-2xl border border-[#e6eef8] bg-white p-4 shadow-sm">
@@ -81,7 +137,13 @@ function TasksCard({ tasks }: { tasks: ReturnType<typeof tasksFor> }) {
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ microsoft?: string; message?: string; reunion?: string }> }) {
   const user = await requireUser();
   const { microsoft, message, reunion } = await searchParams;
-  const [data, workspaces, desk] = await Promise.all([getDashboard(user), listWorkspaces(user), getMicrosoftBoard(user.id)]);
+  const day = zoneDay(new Date());
+  const [data, workspaces, desk, upcoming] = await Promise.all([
+    getDashboard(user),
+    listWorkspaces(user),
+    getMicrosoftBoard(user.id),
+    userAgenda(user, day, addDays(day, 30)),
+  ]);
   const tasks = tasksFor(data.documents);
   const today = new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
@@ -116,7 +178,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           ))}
         </div>
 
-        <div className="order-3 xl:hidden">
+        <div className="order-3 space-y-4 xl:hidden">
+          <UpcomingCard agenda={upcoming} />
           <TasksCard tasks={tasks} />
         </div>
 
@@ -180,7 +243,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </div>
         </section>
 
-        <div className="hidden xl:block">
+        <div className="hidden space-y-4 xl:block">
+          <UpcomingCard agenda={upcoming} />
           <TasksCard tasks={tasks} />
         </div>
 

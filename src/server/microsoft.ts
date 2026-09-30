@@ -2,7 +2,11 @@ import { createHash, randomBytes } from "crypto";
 import type { MailWindow, MeetingWindow } from "@/lib/microsoft-desk";
 import { prisma } from "@/server/db";
 
-const SCOPES = ["openid", "profile", "email", "offline_access", "User.Read", "Mail.Read", "Mail.ReadWrite", "Mail.Send", "Calendars.Read"];
+const SCOPES = ["openid", "profile", "email", "offline_access", "User.Read", "Mail.Read", "Mail.ReadWrite", "Mail.Send", "Calendars.Read", "Calendars.ReadWrite"];
+// Accounts connected before the scope was stored only consented to these; a refresh asking
+// for more than was consented is rejected.
+const LEGACY_SCOPES = SCOPES.filter((scope) => scope !== "Calendars.ReadWrite");
+const ZONE = "America/Toronto";
 
 export type MicrosoftBoard = {
   configured: boolean;
@@ -17,6 +21,7 @@ type TokenResponse = {
   access_token?: string;
   refresh_token?: string;
   expires_in?: number;
+  scope?: string;
   error_description?: string;
 };
 
@@ -145,11 +150,21 @@ function meetingParts(value: string) {
 function findAccount(userId: string) {
   return prisma.microsoftAccount.findUnique({
     where: { userId },
-    select: { id: true, email: true, accessToken: true, refreshToken: true, expiresAt: true },
+    select: { id: true, email: true, accessToken: true, refreshToken: true, expiresAt: true, scope: true },
   });
 }
 
-async function freshAccessToken(account: { id: string; accessToken: string; refreshToken: string; expiresAt: Date }) {
+function grantedScopes(scope: string) {
+  if (!scope.trim()) return LEGACY_SCOPES;
+  const granted = scope.split(/\s+/).filter(Boolean).map((item) => item.replace(/^https:\/\/graph\.microsoft\.com\//i, ""));
+  return [...new Set(["offline_access", ...granted])];
+}
+
+function canWriteCalendar(scope: string) {
+  return grantedScopes(scope).some((item) => item.toLowerCase() === "calendars.readwrite");
+}
+
+async function freshAccessToken(account: { id: string; accessToken: string; refreshToken: string; expiresAt: Date; scope: string }) {
   if (account.expiresAt.getTime() > Date.now() + 60_000) return account.accessToken;
   if (!account.refreshToken) throw new Error("refresh");
   const payload = await tokenRequest(new URLSearchParams({
@@ -157,12 +172,15 @@ async function freshAccessToken(account: { id: string; accessToken: string; refr
     client_secret: process.env.MICROSOFT_CLIENT_SECRET ?? "",
     grant_type: "refresh_token",
     refresh_token: account.refreshToken,
-    scope: SCOPES.join(" "),
+    scope: grantedScopes(account.scope).join(" "),
   }));
   const expiresAt = new Date(Date.now() + (payload.expires_in ?? 3600) * 1000);
   const accessToken = payload.access_token ?? account.accessToken;
   const refreshToken = payload.refresh_token || account.refreshToken;
-  await prisma.microsoftAccount.update({ where: { id: account.id }, data: { accessToken, refreshToken, expiresAt } });
+  await prisma.microsoftAccount.update({
+    where: { id: account.id },
+    data: { accessToken, refreshToken, expiresAt, ...(payload.scope ? { scope: payload.scope } : {}) },
+  });
   return accessToken;
 }
 
@@ -171,10 +189,11 @@ export async function saveMicrosoftAccount(userId: string, token: TokenResponse)
   const email = profile.mail || profile.userPrincipalName || "";
   const expiresAt = new Date(Date.now() + (token.expires_in ?? 3600) * 1000);
   const accessToken = token.access_token ?? "";
+  const scope = token.scope ?? "";
   await prisma.microsoftAccount.upsert({
     where: { userId },
-    create: { userId, email, accessToken, refreshToken: token.refresh_token ?? "", expiresAt },
-    update: { email, accessToken, expiresAt, ...(token.refresh_token ? { refreshToken: token.refresh_token } : {}) },
+    create: { userId, email, accessToken, refreshToken: token.refresh_token ?? "", expiresAt, scope },
+    update: { email, accessToken, expiresAt, scope, ...(token.refresh_token ? { refreshToken: token.refresh_token } : {}) },
   });
   return email;
 }
@@ -264,6 +283,8 @@ async function graphWrite(token: string, path: string, method: string, body?: un
     error.status = response.status;
     throw error;
   }
+  if (response.status === 204) return null;
+  return (await response.json().catch(() => null)) as unknown;
 }
 
 export async function mailAction(userId: string, messageId: string, action: "read" | "archive" | "reply", comment = "") {
@@ -329,6 +350,84 @@ export async function sendInvitationMail(
   } catch (error) {
     console.error(`[invitation] envoi Outlook refusé (${(error as { status?: number }).status ?? "?"})`);
     return false;
+  }
+}
+
+export type OutlookResult =
+  | { status: "created"; eventId: string; joinUrl: string }
+  | { status: "skipped" }
+  | { status: "failed"; hint: string };
+
+// Times are wall-clock values in the Toronto zone ("2026-10-05T14:00"). Meetings invite
+// the attendees from the organizer's mailbox; deadlines only land in the organizer's calendar.
+export async function createOutlookEvent(
+  userId: string,
+  input: {
+    kind: "MEETING" | "DEADLINE";
+    title: string;
+    notes: string;
+    location: string;
+    start: string;
+    end: string;
+    online: boolean;
+    link: string;
+    attendees: { email: string; name: string }[];
+  },
+): Promise<OutlookResult> {
+  if (!configured()) return { status: "skipped" };
+  const account = await findAccount(userId).catch(() => null);
+  if (!account) return { status: "skipped" };
+  if (!canWriteCalendar(account.scope)) {
+    return { status: "failed", hint: "Reconnectez Microsoft dans votre profil pour autoriser l'ajout au calendrier Outlook." };
+  }
+  const meeting = input.kind === "MEETING";
+  const html = [
+    input.notes ? `<p>${escapeHtml(input.notes).replace(/\n/g, "<br>")}</p>` : "",
+    `<p><a href="${escapeHtml(input.link)}">Ouvrir l'entente sur Misterdil</a></p>`,
+  ].join("");
+  const event = {
+    subject: meeting ? input.title : `Échéance · ${input.title}`,
+    body: { contentType: "HTML", content: html },
+    start: { dateTime: `${input.start}:00`, timeZone: ZONE },
+    end: { dateTime: `${input.end}:00`, timeZone: ZONE },
+    ...(input.location ? { location: { displayName: input.location } } : {}),
+    ...(meeting
+      ? { attendees: input.attendees.map((person) => ({ emailAddress: { address: person.email, name: person.name || person.email }, type: "required" })) }
+      : { showAs: "free", isReminderOn: true, reminderMinutesBeforeStart: 24 * 60 }),
+  };
+  try {
+    type Created = { id?: string; onlineMeeting?: { joinUrl?: string } } | null;
+    const token = await freshAccessToken(account);
+    // Teams links need a work or school account; personal accounts get a plain invitation.
+    const online = meeting && input.online
+      ? ((await graphWrite(token, "/me/events", "POST", { ...event, isOnlineMeeting: true, onlineMeetingProvider: "teamsForBusiness" }).catch(
+          () => null,
+        )) as Created)
+      : null;
+    const created = online ?? ((await graphWrite(token, "/me/events", "POST", event)) as Created);
+    return { status: "created", eventId: created?.id ?? "", joinUrl: created?.onlineMeeting?.joinUrl ?? "" };
+  } catch (error) {
+    const status = (error as { status?: number }).status;
+    console.error(`[agenda] création Outlook refusée (${status ?? "?"})`);
+    return {
+      status: "failed",
+      hint: status === 401 || status === 403
+        ? "Reconnectez Microsoft dans votre profil pour autoriser l'ajout au calendrier Outlook."
+        : "L'invitation Outlook n'a pas pu être créée.",
+    };
+  }
+}
+
+// Deleting an event the account organizes also sends the cancellation to its attendees.
+export async function cancelOutlookEvent(userId: string, eventId: string) {
+  if (!configured() || !eventId) return;
+  const account = await findAccount(userId).catch(() => null);
+  if (!account || !canWriteCalendar(account.scope)) return;
+  try {
+    const token = await freshAccessToken(account);
+    await graphWrite(token, `/me/events/${encodeURIComponent(eventId)}`, "DELETE");
+  } catch (error) {
+    console.error(`[agenda] annulation Outlook refusée (${(error as { status?: number }).status ?? "?"})`);
   }
 }
 

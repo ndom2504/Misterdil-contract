@@ -46,7 +46,9 @@
         {
           "color": "#0B51CD",
           "defaultChannel": "misterdil",
-          "sounds": ["./assets/sounds/misterdil_pop.wav"]
+          "sounds": [
+            "./assets/sounds/misterdil_pop.wav"
+          ]
         }
       ],
       "expo-web-browser",
@@ -73,7 +75,8 @@
           "microphonePermission": "Misterdil utilise le microphone pour les appels audio avec les parties prenantes.",
           "enableBackgroundPlayback": false
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "apiUrl": "https://misterdil-contract.vercel.app",

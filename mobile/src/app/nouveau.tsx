@@ -3,7 +3,10 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { DeadlineBadge } from '@/components/deadline-badge';
+import { PickerField } from '@/components/picker-field';
 import { Button, Card, Chip, Field, Loading, Message, SectionTitle } from '@/components/ui';
+import { addDays, localDay } from '@/lib/agenda';
 import { api, errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { partyLabel, roleLabel } from '@/lib/format';
@@ -47,6 +50,8 @@ export default function NewAgreement() {
   const [matches, setMatches] = useState<PersonMatch[]>([]);
   const [typeId, setTypeId] = useState('');
   const [title, setTitle] = useState('');
+  const [today] = useState(() => localDay());
+  const [dueDate, setDueDate] = useState('');
   const [workspaceId, setWorkspaceId] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -103,7 +108,7 @@ export default function NewAgreement() {
     try {
       const result = await api<{ ok: true; id: string }>('/api/mobile/documents', {
         method: 'POST',
-        body: { workspaceId, typeId, title, parties },
+        body: { workspaceId, typeId, title, dueDate, parties },
       });
       router.back();
       router.push(`/documents/${result.id}`);
@@ -228,6 +233,23 @@ export default function NewAgreement() {
               ))}
             </View>
             <Field label="Titre de l'entente" value={title} onChangeText={setTitle} />
+            <View style={{ gap: space.sm }}>
+              <PickerField
+                label="Échéance de l'entente"
+                mode="date"
+                value={dueDate}
+                onChange={setDueDate}
+                minimumDay={today}
+                placeholder="Choisir la date"
+                hint="Obligatoire. Date à laquelle l'entente doit être conclue."
+              />
+              <View style={styles.wrap}>
+                {[14, 30, 60, 90].map((days) => (
+                  <Chip key={days} label={`Dans ${days} j`} selected={dueDate === addDays(today, days)} onPress={() => setDueDate(addDays(today, days))} />
+                ))}
+              </View>
+              {dueDate ? <DeadlineBadge dueDate={dueDate} status="DRAFT" withDate /> : null}
+            </View>
             {catalog.workspaces.length > 1 ? (
               <View style={{ gap: space.sm }}>
                 <SectionTitle>Espace</SectionTitle>
@@ -242,7 +264,7 @@ export default function NewAgreement() {
             <Message tone="info" text="Les sections de l'entente seront créées vides. Vous pourrez les rédiger, puis envoyer l'entente aux membres." />
             <View style={styles.row}>
               <Button label="Retour" variant="secondary" onPress={() => setStep(0)} style={{ flex: 1 }} />
-              <Button label="Créer l'entente" onPress={create} loading={busy} disabled={!typeId} style={{ flex: 2 }} />
+              <Button label="Créer l'entente" onPress={create} loading={busy} disabled={!typeId || !dueDate} style={{ flex: 2 }} />
             </View>
           </>
         )}

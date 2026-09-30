@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronDown, Clock, Copy, FileText, Lock, Mail, MessageSquare, PenLine, Phone, Printer, Search, Send, Sparkles, Users, Video } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, Clock, Copy, FileText, Lock, Mail, MessageSquare, PenLine, Phone, Printer, Search, Send, Sparkles, Users, Video } from "lucide-react";
 import { addComment, approveParticipation, createProposal, proposeFormulation, requestValidation, resolveProposal, saveParties, sendForSignature, sendToMembers, setDiscussionStatus, setModerator, signDocument } from "@/server/actions/collaboration";
 import { setSectionStatus, updateSectionContent } from "@/server/actions/documents";
+import { AgendaPanel } from "@/components/agenda-panel";
 import { AssistantPanel } from "@/components/assistant-panel";
 import { ColorPicker } from "@/components/color-picker";
+import { DeadlineBadge } from "@/components/deadline-badge";
 import { EntenteChat } from "@/components/entente-chat";
 import { SectionSocialBar, SocialCounts } from "@/components/section-social";
 import { PresenceBubbles, type BubblePerson } from "@/components/presence-bubbles";
@@ -145,6 +147,7 @@ function SendResults({ outcome, onClose }: { outcome: SendOutcome; onClose: () =
 const TABS = [
   ["document", "Document", FileText],
   ["discussion", "Chat et appel", Phone],
+  ["agenda", "Agenda", CalendarDays],
   ["discussions", "Discussions", MessageSquare],
   ["cahier", "Cahier des charges", FileText],
   ["participants", "Participants", Users],
@@ -415,6 +418,11 @@ export function DocumentWorkspace({
               <Link href={`/espaces/${view.workspaceId}`} className="rounded-full bg-[#eef3f8] px-2.5 py-1 text-xs text-[#3f4854]">{view.workspaceName}</Link>
               {organizations.map((name) => <span key={name} className="rounded-full bg-[#eef3f8] px-2.5 py-1 text-xs text-[#3f4854]">{name}</span>)}
               <StatusBadge status={view.status} />
+              {view.dueDate ? (
+                <button type="button" onClick={() => setTab("agenda")} aria-label="Voir l'agenda de l'entente">
+                  <DeadlineBadge dueDate={view.dueDate} status={view.status} withDate className="py-1" />
+                </button>
+              ) : null}
               {view.access.canWrite ? (
                 <ColorPicker
                   endpoint={`/api/documents/${view.id}/color`}
@@ -781,6 +789,8 @@ export function DocumentWorkspace({
       ) : null}
 
       {tab === "discussion" ? <EntenteChat documentId={view.id} currentUserId={view.currentUserId} callInvite={callInvite} /> : null}
+
+      {tab === "agenda" ? <AgendaPanel documentId={view.id} /> : null}
 
       {tab === "discussions" ? (
         <div className="space-y-4">

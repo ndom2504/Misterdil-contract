@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Clock, Eye, FileText, Filter, MessageSquare, PenLine, Plus, Sparkles } from "lucide-react";
+import { DeadlineBadge } from "@/components/deadline-badge";
 import { ProgressBar } from "@/components/progress-bar";
 import { StatusBadge } from "@/components/status-badge";
 import { formatRelative } from "@/lib/format";
@@ -143,6 +144,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
                     <th className="px-3 py-3 font-medium">Espace</th>
                     <th className="px-3 py-3 font-medium">Progression</th>
                     <th className="px-3 py-3 font-medium">Statut</th>
+                    <th className="px-3 py-3 font-medium">Échéance</th>
                     <th className="px-3 py-3 font-medium">Modifié</th>
                     <th className="px-5 py-3 font-medium">Actions</th>
                   </tr>
@@ -173,6 +175,9 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
                         <ProgressBar value={document.progress.percent} label="" />
                       </td>
                       <td className="px-3 py-4"><StatusBadge status={document.status} /></td>
+                      <td className="px-3 py-4">
+                        {document.dueDate ? <DeadlineBadge dueDate={document.dueDate} status={document.status} /> : <span className="text-xs text-[#8b939e]">—</span>}
+                      </td>
                       <td className="px-3 py-4 text-xs text-[#5e6875]">{formatRelative(document.updatedAt)}</td>
                       <td className="px-5 py-4">
                         <Link href={documentHref(document)} className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#5e6875] hover:bg-[#f4f7fb]" aria-label={`Ouvrir ${document.title}`}>

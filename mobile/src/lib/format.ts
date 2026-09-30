@@ -77,6 +77,7 @@ export function appRoute(href: string) {
     const query = href.includes('?') ? href.slice(href.indexOf('?') + 1) : '';
     if (/(^|&)appel=1(&|$)/.test(query)) return `/appel/${match[1]}`;
     if (/(^|&)onglet=discussion(&|$)/.test(query)) return `/conversation/${match[1]}`;
+    if (/(^|&)onglet=agenda(&|$)/.test(query)) return `/documents/${match[1]}?onglet=agenda`;
     const section = /(?:^|&)section=([^&#]+)/.exec(query);
     if (section) return `/documents/${match[1]}/${section[1]}`;
     return `/documents/${match[1]}`;

@@ -51,6 +51,34 @@ export type DocumentSummary = {
   owned: boolean;
   canManage?: boolean;
   color?: string;
+  dueDate?: string | null;
+};
+
+export type AgendaItem = {
+  id: string;
+  documentId: string;
+  documentTitle: string;
+  kind: 'MEETING' | 'DEADLINE';
+  title: string;
+  notes: string;
+  location: string;
+  startsAt: string;
+  endsAt: string | null;
+  day: string;
+  time: string;
+  endTime: string;
+  createdByName: string;
+  outlook: boolean;
+  onlineUrl: string;
+  canDelete: boolean;
+};
+
+export type DocumentAgenda = {
+  dueDate: string | null;
+  status: string;
+  canAdd: boolean;
+  canEditDue: boolean;
+  events: AgendaItem[];
 };
 
 export type SectionPerson = { id: string; name: string; avatarUrl: string };
@@ -196,6 +224,7 @@ export type DocumentView = {
   currentUserId: string;
   loadedAt: string;
   sentAt: string | null;
+  dueDate?: string | null;
   progress: Progress;
   access: {
     canEdit: boolean;

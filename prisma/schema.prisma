@@ -46,6 +46,7 @@ model User {
   sectionViews   SectionView[]
   messageReactions MessageReaction[]
   chatClears     ChatClear[]
+  agendaEvents   AgendaEvent[]
 }
 
 // Failed sign-ins to the admin console, counted per client over a short window.
@@ -78,6 +79,7 @@ model MicrosoftAccount {
   email        String
   accessToken  String
   refreshToken String   @default("")
+  scope        String   @default("")
   expiresAt    DateTime
   updatedAt    DateTime @updatedAt
 }
@@ -174,9 +176,11 @@ model Document {
   moderatorId     String?
   moderator       User?    @relation("DocumentModerator", fields: [moderatorId], references: [id])
   sentAt          DateTime?
+  dueDate         DateTime? @db.Date
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  events          AgendaEvent[]
   presences       Presence[]
   sections        DocumentSection[]
   stakeholders    Stakeholder[]
@@ -194,6 +198,28 @@ model Document {
 
   @@index([workspaceId])
   @@index([status])
+}
+
+// Meetings and intermediate deadlines of an agreement. A deadline has no end time.
+// outlookEventId is set when the organizer's Outlook calendar also holds the meeting.
+model AgendaEvent {
+  id             String    @id @default(cuid())
+  documentId     String
+  document       Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  kind           String
+  title          String
+  notes          String    @default("")
+  location       String    @default("")
+  startsAt       DateTime
+  endsAt         DateTime?
+  createdById    String?
+  createdBy      User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdByName  String
+  outlookEventId String    @default("")
+  onlineUrl      String    @default("")
+  createdAt      DateTime  @default(now())
+
+  @@index([documentId, startsAt])
 }
 
 // Group chat of an agreement, shared by all its stakeholders. kind is TEXT, FILE (a shared

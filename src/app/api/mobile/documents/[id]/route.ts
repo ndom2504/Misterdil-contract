@@ -33,6 +33,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       currentUserId: view.currentUserId,
       loadedAt: view.loadedAt,
       sentAt: view.sentAt,
+      dueDate: view.dueDate,
       progress: view.progress,
       access: view.access,
       sections: view.sections,

@@ -1,5 +1,6 @@
 "use server";
 
+import { validDay, zoneDay } from "@/lib/agenda";
 import { documentTypeById, fieldVisible, sectorById, type BlueprintSection, type FieldDef } from "@/lib/catalog";
 import { prisma } from "@/server/db";
 import { requireUser } from "@/server/current-user";
@@ -96,9 +97,11 @@ export async function createDraft(workspaceId: string, typeId: string) {
 
 // New flow: the team is chosen first, then the type. The document starts with the
 // type's sections, all empty except the parties, ready to be written together.
-export async function createAgreement(input: { workspaceId: string; typeId: string; title: string; parties: PartyInput[] }) {
+export async function createAgreement(input: { workspaceId: string; typeId: string; title: string; dueDate: string; parties: PartyInput[] }) {
   const user = await requireUser();
   if (!user.organization) return { ok: false as const, error: "Complétez d'abord votre profil." };
+  if (!validDay(input.dueDate)) return { ok: false as const, error: "Indiquez l'échéance de l'entente." };
+  if (input.dueDate < zoneDay(new Date())) return { ok: false as const, error: "L'échéance ne peut pas être dans le passé." };
   const parties = cleanParties(input.parties);
   if (!parties.length) return { ok: false as const, error: "Ajoutez au moins une partie." };
   const type = await prisma.documentType.findUnique({ where: { id: input.typeId } });
@@ -137,6 +140,7 @@ export async function createAgreement(input: { workspaceId: string; typeId: stri
       moderatorId: user.id,
       status: "DRAFT",
       wizardStep: 6,
+      dueDate: new Date(`${input.dueDate}T00:00:00Z`),
     },
   });
   const partiesText = renderParties(parties);

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Bell, Heart, MessageCircle, MessagesSquare, Phone, Trash2, X } from "lucide-react";
+import { Bell, CalendarClock, Heart, MessageCircle, MessagesSquare, Phone, Trash2, X } from "lucide-react";
 import { playChime } from "@/lib/chime";
 
 type Notice = { id: string; kind: string; title: string; body: string; href: string; createdAt: string };
@@ -16,6 +16,7 @@ const ICONS: Record<string, { Icon: typeof Bell; tone: string }> = {
   COMMENT: { Icon: MessageCircle, tone: "bg-[#e8f0ff] text-[#2f6fed]" },
   MESSAGE: { Icon: MessagesSquare, tone: "bg-[#e8f0ff] text-[#2f6fed]" },
   CALL: { Icon: Phone, tone: "bg-[#e7f8ee] text-[#14804a]" },
+  AGENDA: { Icon: CalendarClock, tone: "bg-[#fff6ed] text-[#b54708]" },
   DELETE: { Icon: Trash2, tone: "bg-[#fdecec] text-[#b42318]" },
 };
 

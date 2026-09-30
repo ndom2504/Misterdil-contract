@@ -4,6 +4,7 @@ import { useCallback, useLayoutEffect, useState } from 'react';
 import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { ColorPickerSheet } from '@/components/color-picker';
+import { DeadlineBadge } from '@/components/deadline-badge';
 import { Button, Loading, Message, ProgressBar, StatusBadge } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -120,6 +121,7 @@ export default function Documents() {
                 </View>
                 <StatusBadge status={item.status} kind="document" />
               </View>
+              <DeadlineBadge dueDate={item.dueDate} status={item.status} withDate />
               <ProgressBar percent={item.progress.percent} color={tint?.hex} />
               <View style={styles.itemFoot}>
                 <Text style={styles.itemMeta}>

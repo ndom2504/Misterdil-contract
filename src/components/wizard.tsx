@@ -28,7 +28,9 @@ import { analyzeProject, moreDomains } from "@/server/actions/assistant";
 import { searchPeople, type PersonMatch } from "@/server/actions/people";
 import { confirmBrief, createAgreement, generateDocument, loadFields, saveContext, saveDescription, saveResponse, saveResponses, saveTitle } from "@/server/actions/documents";
 import { createWorkspace } from "@/server/actions/workspaces";
+import { addDays, zoneDay } from "@/lib/agenda";
 import { PARTY_TYPES } from "@/lib/domain";
+import { DeadlineBadge } from "@/components/deadline-badge";
 import { AGREEMENT_STEPS, StepTrail } from "@/components/step-trail";
 import { Button, Card, Field, controlClass } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -225,6 +227,8 @@ function NewAgreement({ workspaces, types, user }: { workspaces: WorkspaceOption
   const [query, setQuery] = useState("");
   const [typeId, setTypeId] = useState("");
   const [title, setTitle] = useState("");
+  const [today] = useState(() => zoneDay(new Date()));
+  const [dueDate, setDueDate] = useState("");
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
 
@@ -382,16 +386,34 @@ function NewAgreement({ workspaces, types, user }: { workspaces: WorkspaceOption
               );
             })}
           </div>
-          <Field label="Titre de l'entente" hint="Facultatif. Modifiable à tout moment.">
-            <input className={controlClass} value={title} onChange={(event) => setTitle(event.target.value)} placeholder={selectedType?.label ?? "Entente"} />
-          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Titre de l'entente" hint="Facultatif. Modifiable à tout moment.">
+              <input className={controlClass} value={title} onChange={(event) => setTitle(event.target.value)} placeholder={selectedType?.label ?? "Entente"} />
+            </Field>
+            <Field label="Échéance de l'entente" hint="Obligatoire. Date à laquelle l'entente doit être conclue.">
+              <input type="date" required className={controlClass} value={dueDate} min={today} onChange={(event) => setDueDate(event.target.value)} />
+            </Field>
+          </div>
+          <div className="-mt-2 flex flex-wrap items-center gap-2">
+            {[14, 30, 60, 90].map((days) => (
+              <button
+                key={days}
+                type="button"
+                onClick={() => setDueDate(addDays(today, days))}
+                className={cn("rounded-full border px-3 py-1 text-xs font-medium", dueDate === addDays(today, days) ? "border-[#1e4ed8] bg-[#eef3ff] text-[#1e4ed8]" : "border-[#e6e8ee] text-[#5e6875] hover:border-[#c9d7fb]")}
+              >
+                Dans {days} jours
+              </button>
+            ))}
+            {dueDate ? <DeadlineBadge dueDate={dueDate} status="DRAFT" /> : null}
+          </div>
           <Card className="px-5 py-4 text-sm text-[#5e6875]">
             Les sections du type choisi sont créées vides et modifiables. Les parties sont reprises automatiquement. Rien n&apos;est envoyé avant votre confirmation.
           </Card>
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" type="button" onClick={() => setStep(0)}><ArrowLeft className="h-4 w-4" />Équipe</Button>
-            <Button disabled={!typeId || pending} onClick={() => run(async () => {
-              const created = await createAgreement({ workspaceId, typeId, title, parties });
+            <Button disabled={!typeId || !dueDate || pending} onClick={() => run(async () => {
+              const created = await createAgreement({ workspaceId, typeId, title, dueDate, parties });
               if (!created.ok) return created;
               localStorage.removeItem(TEAM_STORAGE);
               router.push(`/documents/${created.id}`);

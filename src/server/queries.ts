@@ -37,7 +37,12 @@ export type DocumentSummary = {
   owned: boolean;
   canManage: boolean;
   color: string;
+  dueDate: string | null;
 };
+
+export function dueDay(value: Date | null) {
+  return value ? value.toISOString().slice(0, 10) : null;
+}
 
 export async function listDocuments(user: SessionUser): Promise<DocumentSummary[]> {
   const memberships = await prisma.workspaceMember.findMany({
@@ -93,6 +98,7 @@ export async function listDocuments(user: SessionUser): Promise<DocumentSummary[
         owned: document.moderatorId === user.id || document.createdById === user.id,
         canManage: access.isModerator,
         color: document.color,
+        dueDate: dueDay(document.dueDate),
       });
     }
   }
@@ -255,6 +261,7 @@ export async function getWorkspace(user: SessionUser, workspaceId: string) {
       participants: document.stakeholders.length,
       progress: progressFromSections(document.sections),
       updatedAt: iso(document.updatedAt),
+      dueDate: dueDay(document.dueDate),
     })),
     attachments: workspace.attachments.map((file) => ({
       id: file.id,
@@ -358,6 +365,7 @@ export async function getDocumentView(user: SessionUser, documentId: string) {
     currentUserId: user.id,
     loadedAt: iso(loadedAt),
     sentAt: document.sentAt ? iso(document.sentAt) : null,
+    dueDate: dueDay(document.dueDate),
     invitationLinks: access.canInvite ? await pendingInvitationLinks(document.id) : [],
     updatedAt: iso(document.updatedAt),
     progress: progressFromSections(document.sections),

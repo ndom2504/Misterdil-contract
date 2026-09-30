@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { FileText } from "lucide-react";
+import { DeadlineBadge } from "@/components/deadline-badge";
 import { ProgressBar } from "@/components/progress-bar";
 import { StatusBadge } from "@/components/status-badge";
 import { formatShort } from "@/lib/format";
@@ -45,6 +46,7 @@ export function DocumentTable({ documents }: { documents: DocumentSummary[] }) {
             </div>
             <div className="mt-2 flex items-center gap-3">
               <div className="min-w-0 flex-1"><ProgressBar value={document.progress.percent} label="" /></div>
+              <DeadlineBadge dueDate={document.dueDate} status={document.status} />
               <span className="shrink-0 text-[11px] text-[#8b939e]">{formatShort(document.updatedAt)}</span>
             </div>
           </Link>
@@ -60,6 +62,7 @@ export function DocumentTable({ documents }: { documents: DocumentSummary[] }) {
             <th className="px-3 py-3 font-medium">Participants</th>
             <th className="px-3 py-3 font-medium">Progression</th>
             <th className="px-3 py-3 font-medium">Statut</th>
+            <th className="px-3 py-3 font-medium">Échéance</th>
             <th className="px-5 py-3 font-medium">Dernière modification</th>
           </tr>
         </thead>
@@ -82,6 +85,9 @@ export function DocumentTable({ documents }: { documents: DocumentSummary[] }) {
               <td className="px-3 py-4 text-[#3f4854]">{document.participants}</td>
               <td className="w-40 px-3 py-4"><ProgressBar value={document.progress.percent} label="" /></td>
               <td className="px-3 py-4"><StatusBadge status={document.status} /></td>
+              <td className="px-3 py-4">
+                {document.dueDate ? <DeadlineBadge dueDate={document.dueDate} status={document.status} /> : <span className="text-xs text-[#8b939e]">—</span>}
+              </td>
               <td className="px-5 py-4 text-[#5e6875]">{formatShort(document.updatedAt)}</td>
             </tr>
           ))}

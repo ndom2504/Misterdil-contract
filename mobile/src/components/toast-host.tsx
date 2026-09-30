@@ -18,6 +18,7 @@ const ICONS: Record<string, { name: keyof typeof Ionicons.glyphMap; color: strin
   COMMENT: { name: 'chatbubble-ellipses', color: colors.brand },
   MESSAGE: { name: 'chatbubbles', color: colors.brand },
   CALL: { name: 'call', color: colors.success },
+  AGENDA: { name: 'calendar', color: colors.warning },
   DELETE: { name: 'trash', color: colors.danger },
 };
 

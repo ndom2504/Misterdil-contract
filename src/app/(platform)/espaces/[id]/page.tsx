@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { DeadlineBadge } from "@/components/deadline-badge";
 import { ProgressBar } from "@/components/progress-bar";
 import { StatusBadge } from "@/components/status-badge";
 import { Card } from "@/components/ui";
@@ -44,6 +45,7 @@ export default async function WorkspacePage({ params }: { params: Promise<{ id: 
               </div>
               <div className="flex items-center gap-4">
                 <div className="w-32"><ProgressBar value={document.progress.percent} label="" /></div>
+                <DeadlineBadge dueDate={document.dueDate} status={document.status} />
                 <StatusBadge status={document.status} />
               </div>
             </li>

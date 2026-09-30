@@ -3,7 +3,9 @@ import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'exp
 import { useCallback, useLayoutEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 
+import { AgendaSection } from '@/components/agenda-section';
 import { ColorDot, ColorPickerSheet } from '@/components/color-picker';
+import { DeadlineBadge } from '@/components/deadline-badge';
 import { FileRow } from '@/components/file-row';
 import { buildPeople, PresenceBubbles } from '@/components/presence-bubbles';
 import { SignaturePanel } from '@/components/signature-panel';
@@ -18,17 +20,17 @@ import { colors, radius, space } from '@/lib/theme';
 import type { DocumentView, InvitationLink, ShareResult, SyncSection } from '@/lib/types';
 import { useDocumentSync } from '@/lib/use-document-sync';
 
-type Tab = 'sections' | 'participants' | 'fichiers' | 'activite';
+type Tab = 'sections' | 'agenda' | 'participants' | 'fichiers' | 'activite';
 
 const STEPS = ['Équipe', 'Type', 'Sections', 'Envoyer'];
 
 export default function DocumentScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, onglet } = useLocalSearchParams<{ id: string; onglet?: string }>();
   const navigation = useNavigation();
   const [view, setView] = useState<DocumentView | null>(null);
   const [live, setLive] = useState<Record<string, SyncSection>>({});
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<Tab>('sections');
+  const [tab, setTab] = useState<Tab>(onglet === 'agenda' ? 'agenda' : 'sections');
   const [sending, setSending] = useState(false);
   const [outcome, setOutcome] = useState<{ shared: ShareResult[]; links: InvitationLink[] } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -188,6 +190,11 @@ export default function DocumentScreen() {
             <PresenceBubbles people={people} />
             <StatusBadge status={view.status} kind="document" />
           </View>
+          {view.dueDate ? (
+            <Pressable accessibilityRole="button" onPress={() => setTab('agenda')}>
+              <DeadlineBadge dueDate={view.dueDate} status={view.status} withDate />
+            </Pressable>
+          ) : null}
         </View>
       </View>
 
@@ -244,8 +251,9 @@ export default function DocumentScreen() {
         {(
           [
             ['sections', 'Sections'],
-            ['participants', `Parties (${view.stakeholders.length})`],
-            ['fichiers', `Fichiers (${view.attachments.length})`],
+            ['agenda', 'Agenda'],
+            ['participants', 'Parties'],
+            ['fichiers', view.attachments.length ? `Fichiers ${view.attachments.length}` : 'Fichiers'],
             ['activite', 'Activité'],
           ] as const
         ).map(([key, label]) => (
@@ -390,6 +398,8 @@ export default function DocumentScreen() {
           )}
         </View>
       ) : null}
+
+      {tab === 'agenda' ? <AgendaSection documentId={id} onDueChanged={load} /> : null}
 
       {tab === 'activite' ? (
         <View style={{ gap: space.sm }}>

@@ -16,6 +16,7 @@ const PROTECTED = [
   "/notifications",
   "/recherche",
   "/onboarding",
+  "/agenda",
 ];
 
 // "/invitation/<token>" stays public; accepting it needs an account.
