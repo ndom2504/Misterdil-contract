@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, Text, View } from 'react-native';
 
+import { AuthStage } from '@/components/auth-stage';
 import { Button, Field, Message } from '@/components/ui';
 import { errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -42,75 +42,61 @@ export default function SignIn() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <View style={styles.brand}>
-            <View style={styles.logo}>
-              <Text style={styles.logoLetter}>M</Text>
-            </View>
-            <Text style={styles.title}>Misterdil</Text>
-            <Text style={styles.subtitle}>Vos ententes, rédigées ensemble.</Text>
-          </View>
-
-          <View style={styles.panel}>
-            {pendingInvitation ? <Message tone="info" text="Connectez-vous pour rejoindre l'entente à laquelle vous êtes invité." /> : null}
-            <Field
-              label="Courriel"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              autoComplete="email"
-              keyboardType="email-address"
-              textContentType="emailAddress"
-              placeholder="vous@entreprise.com"
-            />
-            <Field
-              label="Mot de passe"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoComplete="password"
-              textContentType="password"
-              onSubmitEditing={submit}
-            />
-            <Message text={error} />
-            <Button label="Se connecter" onPress={submit} loading={busy === 'password'} disabled={!email || !password || busy === 'microsoft'} />
-            <View style={styles.divider}>
-              <View style={styles.line} />
-              <Text style={styles.or}>ou</Text>
-              <View style={styles.line} />
-            </View>
-            <Button
-              label="Continuer avec Microsoft"
-              variant="secondary"
-              icon={<Ionicons name="logo-windows" size={18} color="#0078d4" />}
-              onPress={microsoft}
-              loading={busy === 'microsoft'}
-              disabled={busy === 'password'}
-            />
-          </View>
-
-          <Link href="/inscription" style={styles.link}>
-            Pas encore de compte ? <Text style={{ fontWeight: '700' }}>Créer un compte</Text>
+    <AuthStage
+      title="Connectez-vous à votre espace"
+      subtitle="Accédez à vos projets et collaborez avec votre réseau en toute sécurité."
+      footer={
+        <Text style={styles.footer}>
+          Vous n'avez pas de compte ?{' '}
+          <Link href="/inscription" style={styles.footerLink}>
+            Créer un compte
           </Link>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </Text>
+      }>
+      {pendingInvitation ? <Message tone="info" text="Connectez-vous pour rejoindre l'entente à laquelle vous êtes invité." /> : null}
+      <Field
+        label="Adresse courriel"
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        autoComplete="email"
+        keyboardType="email-address"
+        textContentType="emailAddress"
+        placeholder="votre@entreprise.com"
+      />
+      <Field
+        label="Mot de passe"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+        autoComplete="password"
+        textContentType="password"
+        placeholder="Votre mot de passe"
+        onSubmitEditing={submit}
+      />
+      <Message text={error} />
+      <Button label="Se connecter →" onPress={submit} loading={busy === 'password'} disabled={!email || !password || busy === 'microsoft'} />
+      <View style={styles.divider}>
+        <View style={styles.line} />
+        <Text style={styles.or}>ou</Text>
+        <View style={styles.line} />
+      </View>
+      <Button
+        label="Continuer avec Microsoft"
+        variant="secondary"
+        icon={<Ionicons name="logo-windows" size={18} color="#0078d4" />}
+        onPress={microsoft}
+        loading={busy === 'microsoft'}
+        disabled={busy === 'password'}
+      />
+    </AuthStage>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.navy },
-  content: { flexGrow: 1, justifyContent: 'center', padding: space.xl, gap: space.xl },
-  brand: { alignItems: 'center', gap: space.sm },
-  logo: { width: 64, height: 64, borderRadius: 20, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' },
-  logoLetter: { color: '#fff', fontSize: 32, fontWeight: '800' },
-  title: { color: '#fff', fontSize: 28, fontWeight: '800' },
-  subtitle: { color: '#b9c6da', fontSize: 15 },
-  panel: { backgroundColor: '#fff', borderRadius: 24, padding: space.xl, gap: space.lg },
   divider: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   line: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
   or: { color: colors.faint, fontSize: 13 },
-  link: { color: '#dbe5f5', textAlign: 'center', fontSize: 15 },
+  footer: { textAlign: 'center', fontSize: 14, color: colors.muted },
+  footerLink: { color: colors.brand, fontWeight: '600' },
 });

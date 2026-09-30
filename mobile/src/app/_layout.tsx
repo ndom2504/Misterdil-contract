@@ -3,7 +3,7 @@ import { Stack, router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, View } from 'react-native';
+import { Alert, Platform, View } from 'react-native';
 
 import { IntroVideo } from '@/components/intro-video';
 import { api, errorMessage } from '@/lib/api';
@@ -13,6 +13,8 @@ import { registerPushToken } from '@/lib/push';
 import { colors } from '@/lib/theme';
 
 SplashScreen.preventAutoHideAsync();
+
+const useLastNotificationResponse = Platform.OS === 'web' ? () => null : Notifications.useLastNotificationResponse;
 
 export default function RootLayout() {
   return (
@@ -28,7 +30,7 @@ function RootNavigator() {
   const signedIn = status === 'signedIn';
   const onboarded = Boolean(me?.user.onboarded);
   const ready = signedIn && onboarded;
-  const lastResponse = Notifications.useLastNotificationResponse();
+  const lastResponse = useLastNotificationResponse();
   const handledResponse = useRef<string | null>(null);
   const [introReady, setIntroReady] = useState(false);
   const [introDone, setIntroDone] = useState(false);
@@ -73,7 +75,7 @@ function RootNavigator() {
           }}>
           <Stack.Protected guard={!signedIn}>
             <Stack.Screen name="connexion" options={{ headerShown: false }} />
-            <Stack.Screen name="inscription" options={{ title: 'Créer un compte' }} />
+            <Stack.Screen name="inscription" options={{ headerShown: false }} />
           </Stack.Protected>
           <Stack.Protected guard={signedIn && !onboarded}>
             <Stack.Screen name="onboarding" options={{ title: 'Votre profil', headerBackVisible: false }} />
