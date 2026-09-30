@@ -82,6 +82,7 @@ export async function GET(request: Request) {
             passwordHash: await hashPassword(randomBytes(32).toString("hex")),
           },
         }));
+      if (user.disabledAt) return fail("compte-desactive", `compte désactivé : ${user.id}`);
       await acceptInvitations(user.id, profile.email);
       userId = user.id;
       onboarded = user.onboarded;

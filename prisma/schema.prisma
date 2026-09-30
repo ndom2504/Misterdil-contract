@@ -20,6 +20,7 @@ model User {
   profileType    String?
   avatarPath     String   @default("")
   onboarded      Boolean  @default(false)
+  disabledAt     DateTime?
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id])
   createdAt      DateTime @default(now())
@@ -45,6 +46,16 @@ model User {
   sectionViews   SectionView[]
   messageReactions MessageReaction[]
   chatClears     ChatClear[]
+}
+
+// Failed sign-ins to the admin console, counted per client over a short window.
+model AdminAttempt {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+  @@index([createdAt])
 }
 
 model PushToken {

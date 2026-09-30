@@ -27,7 +27,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     where: { id: userId },
     include: { organization: true },
   });
-  if (!user) return null;
+  if (!user || user.disabledAt) return null;
 
   return {
     id: user.id,
@@ -51,8 +51,12 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   };
 }
 
+export const DISABLED_MESSAGE = "Ce compte a été désactivé. Contactez le support Misterdil.";
+
+// A valid cookie for a deactivated or deleted account must be cleared first, otherwise the
+// proxy sends the visitor back from /connexion to /accueil forever.
 export async function requireUser() {
   const user = await getCurrentUser();
-  if (!user) redirect("/connexion");
+  if (!user) redirect((await readSessionUserId()) ? "/api/session/fin" : "/connexion");
   return user;
 }

@@ -6,6 +6,7 @@ export const MICROSOFT_NOTICES: Record<string, string> = {
   "connexion-refusee": "Microsoft a refusé la connexion. Relancez-la ; si le problème persiste, vérifiez l'adresse de retour dans Entra.",
   "consentement-admin": "L'administrateur Microsoft de votre organisation doit d'abord approuver Misterdil.",
   configuration: "Les clés Microsoft ne sont pas disponibles sur le serveur.",
+  "compte-desactive": "Ce compte a été désactivé. Contactez le support Misterdil.",
 };
 
 export type MailWindow = {

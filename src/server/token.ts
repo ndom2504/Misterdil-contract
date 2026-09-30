@@ -3,6 +3,7 @@ import { SignJWT, jwtVerify } from "jose";
 
 const COOKIE = "misterdil_session";
 const EXCHANGE = "mobile-exchange";
+const ADMIN = "admin";
 
 function secret() {
   const value = process.env.AUTH_SECRET || "misterdil-dev-secret-change-before-production-2026";
@@ -47,6 +48,30 @@ export async function redeemMobileExchange(code: string, verifier: string) {
     if (payload.purpose !== EXCHANGE || typeof payload.sub !== "string") return null;
     if (!verifier || payload.chal !== pkceChallenge(verifier)) return null;
     return payload.sub;
+  } catch {
+    return null;
+  }
+}
+
+// Without AUTH_SECRET the development fallback would let anyone forge tokens.
+export function secretConfigured() {
+  return Boolean(process.env.AUTH_SECRET) || process.env.NODE_ENV !== "production";
+}
+
+// Admin tokens carry a purpose, so verifyToken never accepts them as a user session.
+export async function signAdminSession(email: string, version: string, hours: number) {
+  return new SignJWT({ sub: email, purpose: ADMIN, ver: version })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(`${hours}h`)
+    .sign(secret());
+}
+
+export async function readAdminToken(token: string) {
+  try {
+    const { payload } = await jwtVerify(token, secret());
+    if (payload.purpose !== ADMIN || typeof payload.sub !== "string" || typeof payload.ver !== "string") return null;
+    return { email: payload.sub, version: payload.ver };
   } catch {
     return null;
   }

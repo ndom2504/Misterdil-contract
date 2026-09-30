@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { cleanNext, onboardingPath } from "@/lib/next-path";
 import { prisma } from "@/server/db";
-import { requireUser } from "@/server/current-user";
+import { DISABLED_MESSAGE, requireUser } from "@/server/current-user";
 import { acceptInvitations } from "@/server/invitations";
 import { saveOnboarding } from "@/server/onboarding";
 import { hashPassword, verifyPassword } from "@/server/password";
@@ -43,6 +43,7 @@ export async function login(_state: FormState, formData: FormData): Promise<Form
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
     return { error: "Courriel ou mot de passe incorrect." };
   }
+  if (user.disabledAt) return { error: DISABLED_MESSAGE };
 
   const remember = formData.get("remember") === "1";
   await acceptInvitations(user.id, user.email);
