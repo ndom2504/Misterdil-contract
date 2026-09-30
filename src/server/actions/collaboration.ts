@@ -8,6 +8,7 @@ import { loadDocumentForUser } from "@/server/guard";
 import { notifyUser, recordActivity, saveVersion, touchDocument } from "@/server/journal";
 import { cleanParties, pendingInvitationLinks, replaceStakeholders, shareDocument, type PartyInput } from "@/server/sharing";
 import { internalSignatureProvider } from "@/server/signature";
+import { sectionHref } from "@/server/social";
 
 async function context(documentId: string) {
   const user = await requireUser();
@@ -99,9 +100,11 @@ export async function addComment(documentId: string, input: { discussionId?: str
 
   let discussionId = input.discussionId;
   let sectionTitle = "Discussion";
+  let targetSectionId: string | null = null;
   if (!discussionId) {
     const section = loaded.document.sections.find((item) => item.id === input.sectionId);
     sectionTitle = section ? section.title : "Discussion générale";
+    targetSectionId = section?.id ?? null;
     const discussion = await prisma.discussion.create({
       data: {
         documentId,
@@ -120,6 +123,7 @@ export async function addComment(documentId: string, input: { discussionId?: str
   } else {
     const existing = loaded.document.discussions.find((item) => item.id === discussionId);
     sectionTitle = existing?.title ?? sectionTitle;
+    targetSectionId = existing?.sectionId ?? null;
     if (existing?.sectionId) {
       const section = loaded.document.sections.find((item) => item.id === existing.sectionId);
       if (section && section.status !== "LOCKED") {
@@ -146,8 +150,8 @@ export async function addComment(documentId: string, input: { discussionId?: str
   await notifyOthers(documentId, loaded.document.workspaceId, user.id, {
     kind: "COMMENT",
     title: "Nouveau commentaire",
-    body: `${user.name} a écrit dans « ${loaded.document.title} ».`,
-    href: `/documents/${documentId}?onglet=discussions`,
+    body: `${user.name} a commenté « ${sectionTitle} » dans « ${loaded.document.title} ».`,
+    href: targetSectionId ? sectionHref(documentId, targetSectionId) : `/documents/${documentId}?onglet=discussions`,
   });
   touchDocument(documentId);
   return { ok: true as const };

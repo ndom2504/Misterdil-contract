@@ -1,12 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useNavigation } from 'expo-router';
 import { useCallback, useLayoutEffect, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
+import { ColorPickerSheet } from '@/components/color-picker';
 import { Button, Loading, Message, ProgressBar, StatusBadge } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatRelative } from '@/lib/format';
+import { paletteColor } from '@/lib/palette';
 import { colors, radius, space } from '@/lib/theme';
 import type { DocumentSummary } from '@/lib/types';
 
@@ -17,6 +19,7 @@ export default function Documents() {
   const [documents, setDocuments] = useState<DocumentSummary[] | null>(null);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [picking, setPicking] = useState<DocumentSummary | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -60,6 +63,19 @@ export default function Documents() {
     setRefreshing(false);
   }
 
+  async function pickColor(color: string) {
+    const target = picking;
+    setPicking(null);
+    if (!target) return;
+    setDocuments((current) => current?.map((item) => (item.id === target.id ? { ...item, color } : item)) ?? current);
+    try {
+      await api(`/api/mobile/documents/${target.id}/color`, { method: 'PUT', body: { color } });
+    } catch (reason) {
+      setDocuments((current) => current?.map((item) => (item.id === target.id ? { ...item, color: target.color } : item)) ?? current);
+      Alert.alert('Couleur', errorMessage(reason));
+    }
+  }
+
   if (!documents && !error) return <Loading />;
 
   return (
@@ -79,28 +95,55 @@ export default function Documents() {
           </View>
         ) : null
       }
-      renderItem={({ item }) => (
-        <Pressable onPress={() => router.push(`/documents/${item.id}`)} style={({ pressed }) => [styles.item, pressed && { opacity: 0.85 }]}>
-          <View style={styles.itemTop}>
-            <Text style={styles.itemTitle} numberOfLines={2}>
-              {item.title}
-            </Text>
-            <StatusBadge status={item.status} kind="document" />
-          </View>
-          <Text style={styles.itemMeta} numberOfLines={1}>
-            {item.typeLabel} · {item.workspaceName}
-          </Text>
-          <ProgressBar percent={item.progress.percent} />
-          <View style={styles.itemFoot}>
-            <Text style={styles.itemMeta}>
-              {item.progress.validated}/{item.progress.total} sections validées
-            </Text>
-            <Text style={styles.itemMeta}>
-              <Ionicons name="people-outline" size={13} color={colors.faint} /> {item.participants} · {formatRelative(item.updatedAt)}
-            </Text>
-          </View>
-        </Pressable>
-      )}
+      renderItem={({ item }) => {
+        const tint = paletteColor(item.color);
+        return (
+          <Pressable
+            onPress={() => router.push(`/documents/${item.id}`)}
+            onLongPress={() => setPicking(item)}
+            delayLongPress={350}
+            style={({ pressed }) => [styles.item, tint && { borderColor: tint.soft }, pressed && { opacity: 0.88 }]}>
+            <View style={[styles.stripe, { backgroundColor: tint?.hex ?? colors.border }]} />
+            <View style={styles.itemBody}>
+              <View style={styles.itemTop}>
+                <View style={[styles.itemIcon, { backgroundColor: tint?.soft ?? colors.brandSoft }]}>
+                  <Ionicons name="document-text" size={18} color={tint?.hex ?? colors.brand} />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={styles.itemTitle} numberOfLines={2}>
+                    {item.title}
+                  </Text>
+                  <Text style={styles.itemMeta} numberOfLines={1}>
+                    {item.typeLabel} · {item.workspaceName}
+                  </Text>
+                </View>
+                <StatusBadge status={item.status} kind="document" />
+              </View>
+              <ProgressBar percent={item.progress.percent} color={tint?.hex} />
+              <View style={styles.itemFoot}>
+                <Text style={styles.itemMeta}>
+                  {item.progress.validated}/{item.progress.total} sections validées
+                </Text>
+                <Text style={styles.itemMeta}>
+                  <Ionicons name="people-outline" size={13} color={colors.faint} /> {item.participants} · {formatRelative(item.updatedAt)}
+                </Text>
+              </View>
+            </View>
+          </Pressable>
+        );
+      }}
+      ListFooterComponent={
+        <>
+          {documents?.length ? <Text style={styles.tip}>Astuce : appui long sur une entente pour lui attribuer une couleur.</Text> : null}
+          <ColorPickerSheet
+            visible={Boolean(picking)}
+            title={picking ? `Couleur de « ${picking.title} »` : ''}
+            value={picking?.color ?? ''}
+            onClose={() => setPicking(null)}
+            onPick={(color) => void pickColor(color)}
+          />
+        </>
+      }
     />
   );
 }
@@ -108,14 +151,18 @@ export default function Documents() {
 const styles = StyleSheet.create({
   list: { padding: space.lg, gap: space.md, flexGrow: 1 },
   item: {
+    flexDirection: 'row',
     backgroundColor: colors.card,
     borderRadius: radius.lg,
-    padding: space.lg,
-    gap: space.sm,
-    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    borderWidth: 1,
     borderColor: colors.border,
   },
-  itemTop: { flexDirection: 'row', justifyContent: 'space-between', gap: space.md },
+  stripe: { width: 5 },
+  itemBody: { flex: 1, padding: space.lg, gap: space.sm },
+  itemIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  itemTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: space.md },
+  tip: { fontSize: 12, color: colors.faint, textAlign: 'center', marginTop: space.sm },
   itemTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: colors.text },
   itemMeta: { fontSize: 13, color: colors.faint },
   itemFoot: { flexDirection: 'row', justifyContent: 'space-between' },

@@ -41,6 +41,9 @@ model User {
   presences      Presence[]
   pushTokens     PushToken[]
   messages       Message[]
+  sectionLikes   SectionLike[]
+  sectionViews   SectionView[]
+  messageReactions MessageReaction[]
 }
 
 model PushToken {
@@ -49,6 +52,7 @@ model PushToken {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   platform  String   @default("")
+  chime     Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -152,6 +156,7 @@ model Document {
   briefConfirmed  Boolean  @default(false)
   wizardStep      Int      @default(1)
   status          String   @default("DRAFT")
+  color           String   @default("")
   createdById     String
   createdBy       User     @relation("DocumentCreator", fields: [createdById], references: [id])
   moderatorId     String?
@@ -190,8 +195,43 @@ model Message {
   body       String
   kind       String   @default("TEXT")
   createdAt  DateTime @default(now())
+  reactions  MessageReaction[]
 
   @@index([documentId, createdAt])
+}
+
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji     String
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId, emoji])
+}
+
+model SectionLike {
+  id        String          @id @default(cuid())
+  sectionId String
+  section   DocumentSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime        @default(now())
+
+  @@unique([sectionId, userId])
+}
+
+model SectionView {
+  id        String          @id @default(cuid())
+  sectionId String
+  section   DocumentSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  viewedAt  DateTime        @default(now())
+
+  @@unique([sectionId, userId])
 }
 
 model DocumentSection {
@@ -202,6 +242,7 @@ model DocumentSection {
   title      String
   content    String   @default("")
   status     String   @default("NOT_STARTED")
+  color      String   @default("")
   position   Int
   updatedAt  DateTime @updatedAt
   updatedById   String?
@@ -209,6 +250,8 @@ model DocumentSection {
   discussions Discussion[]
   proposals  Proposal[]
   approvals  Approval[]
+  likes      SectionLike[]
+  views      SectionView[]
 
   @@index([documentId])
 }

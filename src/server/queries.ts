@@ -5,6 +5,7 @@ import type { SessionUser } from "@/server/current-user";
 import { prisma } from "@/server/db";
 import { loadDocumentForUser } from "@/server/guard";
 import { pendingInvitationLinks } from "@/server/sharing";
+import { sectionSocial } from "@/server/social";
 
 function iso(value: Date) {
   return value.toISOString();
@@ -34,6 +35,7 @@ export type DocumentSummary = {
   progress: ProgressStats;
   description: string;
   owned: boolean;
+  color: string;
 };
 
 export async function listDocuments(user: SessionUser): Promise<DocumentSummary[]> {
@@ -88,6 +90,7 @@ export async function listDocuments(user: SessionUser): Promise<DocumentSummary[
         progress: progressFromSections(document.sections),
         description: document.description,
         owned: document.moderatorId === user.id || document.createdById === user.id,
+        color: document.color,
       });
     }
   }
@@ -298,6 +301,23 @@ export async function getDocumentView(user: SessionUser, documentId: string) {
     if (specAccess) linkedSpec = { id: spec.id, title: spec.title };
   }
 
+  const threads = new Map<string, { count: number; authorIds: string[] }>();
+  for (const discussion of document.discussions) {
+    if (!discussion.sectionId) continue;
+    const entry = threads.get(discussion.sectionId) ?? { count: 0, authorIds: [] };
+    for (const comment of [...discussion.comments].reverse()) {
+      entry.count += 1;
+      if (comment.authorId && !entry.authorIds.includes(comment.authorId)) entry.authorIds.push(comment.authorId);
+    }
+    threads.set(discussion.sectionId, entry);
+  }
+  const social = await sectionSocial(
+    user.id,
+    document.sections.map((section) => section.id),
+    threads,
+  );
+  const emptySocial = { likes: 0, liked: false, views: 0, comments: 0, people: [] };
+
   const finalApprovals = document.approvals.filter((item) => !item.sectionId);
   const readyForFinal =
     document.sections.length > 0 &&
@@ -313,6 +333,7 @@ export async function getDocumentView(user: SessionUser, documentId: string) {
     sectorLabel: sector?.label ?? document.sector,
     domain: document.domain,
     description: document.description,
+    color: document.color,
     brief: document.briefJson ? (JSON.parse(document.briefJson) as { objectif?: string; client?: string; prestataire?: string; duree?: string }) : null,
     briefConfirmed: document.briefConfirmed,
     wizardStep: document.wizardStep,
@@ -351,6 +372,8 @@ export async function getDocumentView(user: SessionUser, documentId: string) {
       updatedAt: iso(section.updatedAt),
       updatedById: section.updatedById,
       updatedByName: section.updatedByName,
+      color: section.color,
+      social: social.get(section.id) ?? emptySocial,
     })),
     stakeholders: document.stakeholders.map((item) => ({
       id: item.id,

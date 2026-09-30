@@ -7,7 +7,9 @@ import { Check, ChevronDown, Clock, Copy, FileText, Lock, Mail, MessageSquare, P
 import { addComment, approveParticipation, createProposal, proposeFormulation, requestValidation, resolveProposal, saveParties, sendForSignature, sendToMembers, setDiscussionStatus, setModerator, signDocument } from "@/server/actions/collaboration";
 import { setSectionStatus, updateSectionContent } from "@/server/actions/documents";
 import { AssistantPanel } from "@/components/assistant-panel";
+import { ColorPicker } from "@/components/color-picker";
 import { EntenteChat } from "@/components/entente-chat";
+import { SectionSocialBar, SocialCounts } from "@/components/section-social";
 import { PresenceBubbles, type BubblePerson } from "@/components/presence-bubbles";
 import { ProgressBar } from "@/components/progress-bar";
 import { StatusBadge } from "@/components/status-badge";
@@ -17,6 +19,7 @@ import { useDocumentSync } from "@/components/use-document-sync";
 import type { PresenceEntry, SyncSection } from "@/lib/document-sync";
 import { partyLabel, roleLabel, sectionStatusLabel } from "@/lib/domain";
 import { formatDateTime, formatRelative } from "@/lib/format";
+import { paletteColor } from "@/lib/palette";
 import { progressFromSections } from "@/lib/progress";
 import { cn } from "@/lib/cn";
 import type { ShareResult } from "@/server/sharing";
@@ -170,11 +173,13 @@ function HighlightedText({ text, marks }: { text: string; marks: string[] }) {
 export function DocumentWorkspace({
   view,
   initialTab,
+  initialSection,
   callInvite = false,
   history,
 }: {
   view: View;
   initialTab: string;
+  initialSection?: string;
   callInvite?: boolean;
   history: { role: string; content: string }[];
 }) {
@@ -191,7 +196,12 @@ export function DocumentWorkspace({
   const [proposalText, setProposalText] = useState("");
   const [comment, setComment] = useState<Record<string, string>>({});
   const [versionId, setVersionId] = useState(view.versions[0]?.id ?? "");
-  const [activeId, setActiveId] = useState(view.sections.find((section) => section.status === "IN_DISCUSSION")?.id ?? view.sections[0]?.id ?? "");
+  const [activeId, setActiveId] = useState(
+    (initialSection && view.sections.some((section) => section.id === initialSection) ? initialSection : undefined) ??
+      view.sections.find((section) => section.status === "IN_DISCUSSION")?.id ??
+      view.sections[0]?.id ??
+      "",
+  );
   const [sectionQuery, setSectionQuery] = useState("");
   const [zoom, setZoom] = useState("100");
   const [more, setMore] = useState(false);
@@ -300,6 +310,21 @@ export function DocumentWorkspace({
     });
   }
 
+  function insertIntoSection(sectionId: string, text: string) {
+    const section = sections.find((item) => item.id === sectionId);
+    if (!section) return;
+    const base = editing === sectionId ? draftsRef.current[sectionId] ?? section.content : section.content;
+    if (editing !== sectionId) {
+      setEditing(sectionId);
+      setConflict(null);
+      setBases((current) => ({ ...current, [sectionId]: section.updatedAt }));
+    }
+    const next = base.trimEnd() ? `${base.trimEnd()}\n\n${text.trim()}` : text.trim();
+    draftsRef.current = { ...draftsRef.current, [sectionId]: next };
+    setDrafts(draftsRef.current);
+    setDirty(true);
+  }
+
   function send() {
     setError("");
     startSending(async () => {
@@ -348,12 +373,17 @@ export function DocumentWorkspace({
   const recipients = view.stakeholders.filter((party) => !party.isCurrentUser && party.userId !== view.currentUserId);
   const reachable = recipients.filter((party) => party.userId || party.email);
   const setupStep = sections.some((section) => section.anchor !== "parties" && section.content.trim()) ? 3 : 2;
+  const documentTint = paletteColor(view.color);
+  const activeTint = paletteColor(active?.color);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#e8f0ff] text-[#2f6fed]">
+          <span
+            className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#e8f0ff] text-[#2f6fed]"
+            style={documentTint ? { backgroundColor: documentTint.soft, color: documentTint.hex } : undefined}
+          >
             <FileText className="h-5 w-5" />
           </span>
           <div className="min-w-0">
@@ -368,6 +398,9 @@ export function DocumentWorkspace({
               <Link href={`/espaces/${view.workspaceId}`} className="rounded-full bg-[#eef3f8] px-2.5 py-1 text-xs text-[#3f4854]">{view.workspaceName}</Link>
               {organizations.map((name) => <span key={name} className="rounded-full bg-[#eef3f8] px-2.5 py-1 text-xs text-[#3f4854]">{name}</span>)}
               <StatusBadge status={view.status} />
+              {view.access.canWrite ? (
+                <ColorPicker endpoint={`/api/documents/${view.id}/color`} value={view.color} label="Couleur de l'entente" compact />
+              ) : null}
             </div>
           </div>
         </div>
@@ -479,11 +512,20 @@ export function DocumentWorkspace({
                   const index = sections.findIndex((item) => item.id === section.id);
                   const selected = section.id === active.id;
                   const writer = presence.find((entry) => entry.online && entry.userId !== view.currentUserId && entry.sectionId === section.id);
+                  const tint = paletteColor(section.color);
                   return (
-                    <button key={section.id} type="button" onClick={() => setActiveId(section.id)} className={cn("flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-sm", selected ? "bg-[#e8f0ff]" : "hover:bg-[#f4f7fb]")}>
-                      <span className="w-5 shrink-0 text-xs text-[#8b939e]">{index + 1}</span>
+                    <button
+                      key={section.id}
+                      type="button"
+                      onClick={() => setActiveId(section.id)}
+                      className={cn("relative flex w-full items-center gap-2 overflow-hidden rounded-xl py-2 pl-3 pr-2 text-left text-sm", selected ? "bg-[#e8f0ff]" : "hover:bg-[#f4f7fb]")}
+                      style={selected && tint ? { backgroundColor: tint.soft } : undefined}
+                    >
+                      <span className="absolute inset-y-1.5 left-0 w-1 rounded-full" style={{ backgroundColor: tint?.hex ?? "transparent" }} />
+                      <span className="w-5 shrink-0 text-xs font-semibold" style={{ color: tint?.hex ?? "#8b939e" }}>{index + 1}</span>
                       <span className="min-w-0 flex-1 truncate text-[#10233f]">{section.title}</span>
                       {writer ? <span title={`${writer.name} modifie cette section`}><PenLine className="h-3.5 w-3.5 shrink-0 animate-pulse text-[#0f9d78]" /></span> : null}
+                      <SocialCounts social={section.social} />
                       <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", statusTone(section.status))}>{sectionStatusLabel(section.status)}</span>
                     </button>
                   );
@@ -491,7 +533,8 @@ export function DocumentWorkspace({
               </div>
             </section>
 
-            <section className="rounded-2xl border border-[#e6eef8] bg-white shadow-sm">
+            <section className="overflow-hidden rounded-2xl border border-[#e6eef8] bg-white shadow-sm">
+              {activeTint ? <div className="h-1.5" style={{ backgroundColor: activeTint.hex }} /> : null}
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#eef2f7] px-4 py-3">
                 <select className="h-9 rounded-lg border border-[#e6eef8] bg-white px-2 text-sm" value={version?.id ?? ""} onChange={(event) => setVersionId(event.target.value)}>
                   <option value={view.versions[0]?.id ?? ""}>Version actuelle</option>
@@ -510,6 +553,16 @@ export function DocumentWorkspace({
                   <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", statusTone(active.status))}>{sectionStatusLabel(active.status)}</span>
                   {active.updatedByName && active.updatedAt ? (
                     <span className="text-xs text-[#8b939e]">Modifié par {active.updatedByName} {formatRelative(active.updatedAt)}</span>
+                  ) : null}
+                  {view.access.canWrite ? (
+                    <span className="ml-auto">
+                      <ColorPicker
+                        key={active.id}
+                        endpoint={`/api/documents/${view.id}/sections/${active.id}/color`}
+                        value={active.color}
+                        label="Couleur de la section"
+                      />
+                    </span>
                   ) : null}
                 </div>
                 {lockedBy ? (
@@ -566,6 +619,17 @@ export function DocumentWorkspace({
                     {canWriteActive ? "Section vide. Cliquez pour commencer la rédaction." : "Cette section n'est pas encore rédigée."}
                   </button>
                 )}
+                <SectionSocialBar
+                  key={active.id}
+                  documentId={view.id}
+                  sectionId={active.id}
+                  social={active.social}
+                  onComment={() => {
+                    const input = document.getElementById(`comment-${active.id}`);
+                    input?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    input?.focus();
+                  }}
+                />
                 {proposalFor === active.id ? (
                   <div className="mt-4 space-y-2">
                     <textarea className={`${controlClass} min-h-24`} value={proposalText} onChange={(event) => setProposalText(event.target.value)} placeholder="Nouvelle formulation" />
@@ -625,7 +689,14 @@ export function DocumentWorkspace({
                   {view.access.isModerator ? <button type="button" className="h-9 rounded-full border border-[#c9d7fb] bg-white text-sm font-medium text-[#2f6fed]" onClick={() => run(() => proposeFormulation(view.id, active.id))}>Proposer une formulation</button> : null}
                 </div>
                 <div className="mt-3 rounded-xl bg-white p-3 text-[#12151a]">
-                  <AssistantPanel documentId={view.id} initial={history} compact />
+                  <AssistantPanel
+                    documentId={view.id}
+                    initial={history}
+                    compact
+                    sectionId={active.id}
+                    sectionTitle={active.title}
+                    onInsert={canWriteActive && !lockedBy ? (text) => insertIntoSection(active.id, text) : undefined}
+                  />
                 </div>
               </section>
               <section className="rounded-2xl border border-[#e6eef8] bg-white p-4 shadow-sm">
@@ -645,7 +716,7 @@ export function DocumentWorkspace({
                 </ul>
                 {view.access.canComment ? (
                   <div className="mt-3 flex gap-2">
-                    <input className={controlClass} value={comment[active.id] ?? ""} onChange={(event) => setComment((current) => ({ ...current, [active.id]: event.target.value }))} placeholder="Ajouter un commentaire" />
+                    <input id={`comment-${active.id}`} className={controlClass} value={comment[active.id] ?? ""} onChange={(event) => setComment((current) => ({ ...current, [active.id]: event.target.value }))} placeholder="Ajouter un commentaire" />
                     <Button type="button" onClick={() => run(() => addComment(view.id, { sectionId: active.id, body: comment[active.id] ?? "" }))}>Envoyer</Button>
                   </div>
                 ) : null}

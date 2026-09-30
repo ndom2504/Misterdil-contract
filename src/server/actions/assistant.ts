@@ -1,27 +1,18 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { assist, analyzeDescription, suggestDomains } from "@/server/ai";
+import { analyzeDescription, suggestDomains } from "@/server/ai";
+import { askMisterdil } from "@/server/assistant";
 import { prisma } from "@/server/db";
 import { requireUser } from "@/server/current-user";
-import { buildAssistantContext } from "@/server/queries";
 
-export async function askAssistant(message: string, documentId?: string) {
+export async function askAssistant(message: string, documentId?: string, sectionId?: string) {
   const user = await requireUser();
-  const text = message.trim();
-  if (text.length < 2) return { ok: false as const, error: "Écrivez votre question." };
-  const context = await buildAssistantContext(user, documentId || undefined);
-  if (documentId && !context.document) return { ok: false as const, error: "Ce document ne vous est pas accessible." };
-  const answer = await assist(text, context);
-  await prisma.aiInteraction.createMany({
-    data: [
-      { userId: user.id, documentId: documentId || null, role: "user", content: text },
-      { userId: user.id, documentId: documentId || null, role: "assistant", content: answer },
-    ],
-  });
+  const result = await askMisterdil(user, { message, documentId, sectionId });
+  if (!result.ok) return result;
   revalidatePath("/assistant");
   if (documentId) revalidatePath(`/documents/${documentId}`);
-  return { ok: true as const, answer };
+  return result;
 }
 
 export async function analyzeProject(documentId: string, description: string) {

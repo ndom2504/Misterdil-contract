@@ -6,8 +6,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CallCredentials } from "@/components/call-panel";
 import { Card } from "@/components/ui";
 import { UserAvatar } from "@/components/user-avatar";
+import { playChime } from "@/lib/chime";
 import { cn } from "@/lib/cn";
 import { formatDateTime } from "@/lib/format";
+import { REACTIONS } from "@/lib/palette";
 
 const CallPanel = dynamic(() => import("@/components/call-panel"), { ssr: false });
 
@@ -21,9 +23,21 @@ type ChatMessage = {
   createdAt: string;
 };
 type CallStatus = { configured: boolean; active: boolean; participants: { id: string; name: string }[] };
-type Reply = { messages: ChatMessage[]; call: CallStatus };
+type Reaction = { emoji: string; count: number; userIds: string[]; names: string[] };
+type Reactions = Record<string, Reaction[]>;
+type Reply = { messages: ChatMessage[]; reactions?: Reactions; call: CallStatus };
 
 const POLL_MS = 3000;
+
+function receivedCount(reactions: Reactions, messages: ChatMessage[], userId: string) {
+  const mine = new Set(messages.filter((item) => item.authorId === userId).map((item) => item.id));
+  let total = 0;
+  for (const [messageId, list] of Object.entries(reactions)) {
+    if (!mine.has(messageId)) continue;
+    for (const entry of list) total += entry.userIds.filter((id) => id !== userId).length;
+  }
+  return total;
+}
 
 function merge(current: ChatMessage[], incoming: ChatMessage[]) {
   const known = new Set(current.map((item) => item.id));
@@ -44,8 +58,12 @@ export function EntenteChat({ documentId, currentUserId, callInvite }: { documen
   const [error, setError] = useState("");
   const [credentials, setCredentials] = useState<CallCredentials | null>(null);
   const [joining, setJoining] = useState(false);
+  const [reactions, setReactions] = useState<Reactions>({});
   const cursor = useRef<string | null>(null);
   const list = useRef<HTMLDivElement>(null);
+  const known = useRef<ChatMessage[]>([]);
+  const received = useRef<number | null>(null);
+  const pendingReaction = useRef(0);
 
   const load = useCallback(async () => {
     const after = cursor.current ? `?after=${encodeURIComponent(cursor.current)}` : "";
@@ -55,12 +73,50 @@ export function EntenteChat({ documentId, currentUserId, callInvite }: { documen
       return;
     }
     const data = (await response.json()) as Reply;
+    known.current = merge(known.current, data.messages);
     setMessages((current) => merge(current ?? [], data.messages));
     setCall(data.call);
+    if (data.reactions && !pendingReaction.current) {
+      const total = receivedCount(data.reactions, known.current, currentUserId);
+      if (received.current !== null && total > received.current) playChime();
+      received.current = total;
+      setReactions(data.reactions);
+    }
     const last = data.messages[data.messages.length - 1];
     if (last) cursor.current = last.createdAt;
     setError("");
-  }, [documentId]);
+  }, [documentId, currentUserId]);
+
+  async function react(messageId: string, emoji: string) {
+    const before = reactions[messageId] ?? [];
+    const entry = before.find((item) => item.emoji === emoji);
+    const adding = !entry?.userIds.includes(currentUserId);
+    if (adding) playChime();
+    const optimistic = adding
+      ? entry
+        ? before.map((item) => (item.emoji === emoji ? { ...item, count: item.count + 1, userIds: [...item.userIds, currentUserId], names: [...item.names, "Vous"] } : item))
+        : [...before, { emoji, count: 1, userIds: [currentUserId], names: ["Vous"] }]
+      : before
+          .map((item) => (item.emoji === emoji ? { ...item, count: item.count - 1, userIds: item.userIds.filter((id) => id !== currentUserId) } : item))
+          .filter((item) => item.count > 0);
+    setReactions((current) => ({ ...current, [messageId]: optimistic }));
+    pendingReaction.current += 1;
+    try {
+      const response = await fetch(`/api/documents/${documentId}/messages/${messageId}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji }),
+      });
+      if (!response.ok) throw new Error(await readError(response));
+      const data = (await response.json()) as { reactions: Reaction[] };
+      setReactions((current) => ({ ...current, [messageId]: data.reactions }));
+    } catch (reason) {
+      setReactions((current) => ({ ...current, [messageId]: before }));
+      setError(reason instanceof Error ? reason.message : "Réaction impossible.");
+    } finally {
+      pendingReaction.current -= 1;
+    }
+  }
 
   useEffect(() => {
     void load();
@@ -87,6 +143,7 @@ export function EntenteChat({ documentId, currentUserId, callInvite }: { documen
     });
     if (response.ok) {
       const data = (await response.json()) as { message: ChatMessage };
+      known.current = merge(known.current, [data.message]);
       setMessages((current) => merge(current ?? [], [data.message]));
       setDraft("");
       setError("");
@@ -170,13 +227,54 @@ export function EntenteChat({ documentId, currentUserId, callInvite }: { documen
               const mine = item.authorId === currentUserId;
               const previous = messages[index - 1];
               const first = !previous || previous.authorId !== item.authorId || previous.kind === "CALL";
+              const chips = reactions[item.id] ?? [];
               return (
-                <div key={item.id} className={cn("flex items-end gap-2", mine && "justify-end", first && "pt-2")}>
+                <div key={item.id} className={cn("group flex items-end gap-2", mine && "justify-end", first && "pt-2")}>
                   {!mine ? <div className="w-8">{first ? <UserAvatar name={item.authorName} url={item.authorAvatar} size={32} /> : null}</div> : null}
-                  <div className={cn("max-w-[75%] rounded-2xl px-3.5 py-2", mine ? "rounded-br-md bg-[#2f6fed] text-white" : "rounded-bl-md border border-[#eef2f7] bg-[#f7f8fb] text-[#10233f]")}>
-                    {!mine && first ? <p className="text-xs font-semibold text-[#2f6fed]">{item.authorName}</p> : null}
-                    <p className="text-sm leading-6 whitespace-pre-wrap">{item.body}</p>
-                    <p className={cn("text-right text-[11px]", mine ? "text-white/75" : "text-[#8b939e]")}>{formatDateTime(item.createdAt)}</p>
+                  <div className={cn("relative flex max-w-[75%] flex-col", mine ? "items-end" : "items-start")}>
+                    <div className={cn("rounded-2xl px-3.5 py-2", mine ? "rounded-br-md bg-[#2f6fed] text-white" : "rounded-bl-md border border-[#eef2f7] bg-[#f7f8fb] text-[#10233f]")}>
+                      {!mine && first ? <p className="text-xs font-semibold text-[#2f6fed]">{item.authorName}</p> : null}
+                      <p className="text-sm leading-6 whitespace-pre-wrap">{item.body}</p>
+                      <p className={cn("text-right text-[11px]", mine ? "text-white/75" : "text-[#8b939e]")}>{formatDateTime(item.createdAt)}</p>
+                    </div>
+                    <div
+                      className={cn(
+                        "absolute -top-4 z-10 hidden items-center gap-0.5 rounded-full border border-[#e6eef8] bg-white px-1 py-0.5 shadow-md group-hover:flex group-focus-within:flex",
+                        mine ? "right-2" : "left-2",
+                      )}
+                    >
+                      {REACTIONS.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          aria-label={`Réagir ${emoji}`}
+                          onClick={() => void react(item.id, emoji)}
+                          className="rounded-full px-1 text-base leading-7 transition hover:scale-125">
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                    {chips.length ? (
+                      <div className="-mt-1.5 flex flex-wrap gap-1 px-2">
+                        {chips.map((entry) => {
+                          const selected = entry.userIds.includes(currentUserId);
+                          return (
+                            <button
+                              key={entry.emoji}
+                              type="button"
+                              title={entry.names.join(", ")}
+                              onClick={() => void react(item.id, entry.emoji)}
+                              className={cn(
+                                "inline-flex items-center gap-0.5 rounded-full border px-1.5 text-xs leading-5 shadow-sm",
+                                selected ? "border-[#2f6fed] bg-[#e8f0ff] text-[#2f6fed]" : "border-[#e6eef8] bg-white text-[#5e6875]",
+                              )}>
+                              <span>{entry.emoji}</span>
+                              {entry.count > 1 ? <span className="font-semibold">{entry.count}</span> : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               );

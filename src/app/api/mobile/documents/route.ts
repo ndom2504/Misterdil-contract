@@ -19,6 +19,7 @@ export async function GET() {
       participants: item.participants,
       progress: item.progress,
       owned: item.owned,
+      color: item.color,
     })),
   });
 }

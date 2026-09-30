@@ -4,6 +4,7 @@ import { prisma } from "@/server/db";
 import { documentAccess } from "@/server/guard";
 import { notifyUser, recordActivity } from "@/server/journal";
 import { callParticipants, callToken, livekitConfigured } from "@/server/livekit";
+import { REACTIONS } from "@/lib/palette";
 import { sendPush } from "@/server/push";
 import { listDocuments } from "@/server/queries";
 
@@ -100,6 +101,68 @@ export async function callStatus(documentId: string) {
   return { configured: livekitConfigured(), active: participants.length > 0, participants };
 }
 
+export type ReactionSummary = { emoji: string; count: number; userIds: string[]; names: string[] };
+
+// Reactions come back on every poll, whatever the cursor, because a reaction added
+// or removed on an older message would otherwise never reach the other clients.
+async function reactionMap(documentId: string, messageId?: string) {
+  const rows = await prisma.messageReaction.findMany({
+    where: messageId ? { messageId } : { message: { documentId } },
+    orderBy: { createdAt: "asc" },
+    take: 1000,
+    select: { messageId: true, emoji: true, userId: true, user: { select: { name: true } } },
+  });
+  const map: Record<string, ReactionSummary[]> = {};
+  for (const row of rows) {
+    const list = (map[row.messageId] ??= []);
+    let entry = list.find((item) => item.emoji === row.emoji);
+    if (!entry) {
+      entry = { emoji: row.emoji, count: 0, userIds: [], names: [] };
+      list.push(entry);
+    }
+    entry.count += 1;
+    entry.userIds.push(row.userId);
+    entry.names.push(row.user.name);
+  }
+  return map;
+}
+
+export async function toggleReaction(user: SessionUser, documentId: string, messageId: string, emoji: string) {
+  const access = await documentAccess(documentId, user);
+  if (!access) return { ok: false as const, error: "Conversation inaccessible." };
+  if (!(REACTIONS as readonly string[]).includes(emoji)) return { ok: false as const, error: "Réaction inconnue." };
+  const message = await prisma.message.findFirst({
+    where: { id: messageId, documentId },
+    select: { id: true, authorId: true, body: true, kind: true },
+  });
+  if (!message) return { ok: false as const, error: "Message introuvable." };
+
+  const removed = await prisma.messageReaction.deleteMany({ where: { messageId, userId: user.id, emoji } });
+  if (!removed.count) {
+    await prisma.messageReaction.upsert({
+      where: { messageId_userId_emoji: { messageId, userId: user.id, emoji } },
+      update: {},
+      create: { messageId, userId: user.id, emoji },
+    });
+    const authorId = message.authorId;
+    if (authorId && authorId !== user.id) {
+      after(async () => {
+        const header = await documentHeader(documentId);
+        const preview = message.body.length > 60 ? `${message.body.slice(0, 57)}...` : message.body;
+        await notifyUser({
+          userId: authorId,
+          kind: "REACTION",
+          title: `${user.name} a réagi ${emoji}`,
+          body: `À votre message « ${preview} »${header ? ` dans « ${header.title} »` : ""}.`,
+          href: chatHref(documentId),
+        });
+      });
+    }
+  }
+  const reactions = (await reactionMap(documentId, messageId))[messageId] ?? [];
+  return { ok: true as const, reactions };
+}
+
 // `after` is inclusive so messages written in the same millisecond are never skipped; clients dedupe by id.
 export async function listMessages(user: SessionUser, documentId: string, after?: string) {
   const access = await documentAccess(documentId, user);
@@ -121,11 +184,16 @@ export async function listMessages(user: SessionUser, documentId: string, after?
             select: messageSelect,
           })
         ).reverse();
-  const document = since ? null : await prisma.document.findUnique({ where: { id: documentId }, select: { title: true } });
+  const [document, call, reactions] = await Promise.all([
+    since ? null : prisma.document.findUnique({ where: { id: documentId }, select: { title: true } }),
+    callStatus(documentId),
+    reactionMap(documentId),
+  ]);
   return {
     ...(document ? { title: document.title } : {}),
     messages: rows.map(toMessage),
-    call: await callStatus(documentId),
+    reactions,
+    call,
     serverTime: new Date().toISOString(),
   };
 }
@@ -146,7 +214,7 @@ export async function postMessage(user: SessionUser, documentId: string, text: s
     const preview = body.length > 140 ? `${body.slice(0, 137)}...` : body;
     for (const memberId of header.members) {
       if (memberId === user.id) continue;
-      await sendPush(memberId, { title: `${user.name} · ${header.title}`, body: preview, href: chatHref(documentId) });
+      await sendPush(memberId, { title: `${user.name} · ${header.title}`, body: preview, href: chatHref(documentId), kind: "MESSAGE" });
     }
   });
   return { ok: true as const, message: toMessage(created) };

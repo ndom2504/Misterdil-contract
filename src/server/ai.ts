@@ -26,6 +26,7 @@ export type AssistantContext = {
     activities: { message: string; createdAt: string }[];
     missing: string[];
   };
+  focus?: { title: string; content: string };
 };
 
 function fold(value: string) {
@@ -270,8 +271,11 @@ export function assistLocally(question: string, context: AssistantContext) {
 
 export async function assist(question: string, context: AssistantContext) {
   const local = assistLocally(question, context);
+  const focus = context.focus
+    ? ` L'utilisateur rédige la section « ${context.focus.title} » (champ focus du contexte). Quand il demande de rédiger, compléter ou reformuler, réponds uniquement avec le texte prêt à insérer dans cette section, sans introduction ni commentaire.`
+    : "";
   const ai = await complete([
-    { role: "system", content: SYSTEM },
+    { role: "system", content: SYSTEM + focus },
     {
       role: "user",
       content: `Contexte autorisé :\n${JSON.stringify(context)}\n\nQuestion : ${question}\n\nSi le contexte ne suffit pas, dis ce qu'il faut confirmer. N'ajoute pas de faits absents.`,

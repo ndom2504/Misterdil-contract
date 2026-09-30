@@ -4,11 +4,14 @@ const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 
 type ExpoTicket = { status: "ok" | "error"; details?: { error?: string } };
 
+export const CHIME_SOUND = "misterdil_pop.wav";
+export const CHIME_CHANNEL = "misterdil";
+
 // Best effort: a notification is already stored in the database, so a push failure
 // must never break the action that triggered it.
-export async function sendPush(userId: string, message: { title: string; body: string; href: string }) {
+export async function sendPush(userId: string, message: { title: string; body: string; href: string; kind?: string }) {
   try {
-    const tokens = await prisma.pushToken.findMany({ where: { userId }, select: { token: true } });
+    const tokens = await prisma.pushToken.findMany({ where: { userId }, select: { token: true, chime: true } });
     if (!tokens.length) return;
     const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json" };
     if (process.env.EXPO_ACCESS_TOKEN) headers.Authorization = `Bearer ${process.env.EXPO_ACCESS_TOKEN}`;
@@ -20,8 +23,11 @@ export async function sendPush(userId: string, message: { title: string; body: s
           to: item.token,
           title: message.title,
           body: message.body,
-          sound: "default",
-          data: { href: message.href },
+          // Android drops pushes aimed at a channel the app never created, so older
+          // builds without the chime keep the default channel and sound.
+          sound: item.chime ? CHIME_SOUND : "default",
+          ...(item.chime ? { channelId: CHIME_CHANNEL } : {}),
+          data: { href: message.href, kind: message.kind ?? "" },
         })),
       ),
       signal: AbortSignal.timeout(5000),

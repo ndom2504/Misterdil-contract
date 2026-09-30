@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Platform, View } from 'react-native';
 
 import { IntroVideo } from '@/components/intro-video';
+import { ToastHost } from '@/components/toast-host';
 import { api, errorMessage } from '@/lib/api';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { appRoute } from '@/lib/format';
@@ -91,11 +92,13 @@ function RootNavigator() {
             <Stack.Screen name="conversation/[id]" options={{ headerShown: false }} />
             <Stack.Screen name="appel/[id]" options={{ headerShown: false, presentation: 'fullScreenModal', gestureEnabled: false }} />
             <Stack.Screen name="parametres" options={{ title: 'Paramètres du profil' }} />
+            <Stack.Screen name="assistant/[id]" options={{ title: 'Assistant Misterdil' }} />
           </Stack.Protected>
           <Stack.Screen name="invitation/[token]" options={{ title: 'Invitation' }} />
           <Stack.Screen name="auth" options={{ headerShown: false }} />
         </Stack>
       )}
+      {ready && <ToastHost />}
       {status !== 'loading' && !introDone && <IntroVideo onReady={() => setIntroReady(true)} onDone={() => setIntroDone(true)} />}
     </View>
   );

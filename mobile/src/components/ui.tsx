@@ -124,10 +124,10 @@ export function StatusBadge({ status, kind = 'section' }: { status: string; kind
   );
 }
 
-export function ProgressBar({ percent }: { percent: number }) {
+export function ProgressBar({ percent, color }: { percent: number; color?: string }) {
   return (
     <View style={styles.progressTrack}>
-      <View style={[styles.progressFill, { width: `${Math.max(0, Math.min(100, percent))}%` }]} />
+      <View style={[styles.progressFill, { width: `${Math.max(0, Math.min(100, percent))}%` }, color ? { backgroundColor: color } : null]} />
     </View>
   );
 }

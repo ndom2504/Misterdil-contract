@@ -6,6 +6,7 @@ import {
   AppState,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -18,13 +19,45 @@ import { Avatar } from '@/components/avatar';
 import { Message } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { playChime } from '@/lib/chime';
 import { formatTime } from '@/lib/format';
+import { REACTIONS } from '@/lib/palette';
 import { colors, radius, space } from '@/lib/theme';
-import type { CallStatus, ChatMessage } from '@/lib/types';
+import type { CallStatus, ChatMessage, ReactionSummary } from '@/lib/types';
 
 const POLL_MS = 3000;
 
-type Reply = { title?: string; messages: ChatMessage[]; call: CallStatus; serverTime: string };
+type Reactions = Record<string, ReactionSummary[]>;
+type Reply = { title?: string; messages: ChatMessage[]; reactions?: Reactions; call: CallStatus; serverTime: string };
+
+function receivedCount(reactions: Reactions, mine: Set<string>, myId: string) {
+  let total = 0;
+  for (const [messageId, list] of Object.entries(reactions)) {
+    if (!mine.has(messageId)) continue;
+    for (const entry of list) total += entry.userIds.filter((userId) => userId !== myId).length;
+  }
+  return total;
+}
+
+function toggleLocal(list: ReactionSummary[], emoji: string, myId: string, myName: string) {
+  const existing = list.find((item) => item.emoji === emoji);
+  if (existing?.userIds.includes(myId)) {
+    const index = existing.userIds.indexOf(myId);
+    const next = {
+      ...existing,
+      count: existing.count - 1,
+      userIds: existing.userIds.filter((_, position) => position !== index),
+      names: existing.names.filter((_, position) => position !== index),
+    };
+    return next.count ? list.map((item) => (item.emoji === emoji ? next : item)) : list.filter((item) => item.emoji !== emoji);
+  }
+  if (existing) {
+    return list.map((item) =>
+      item.emoji === emoji ? { ...item, count: item.count + 1, userIds: [...item.userIds, myId], names: [...item.names, myName] } : item,
+    );
+  }
+  return [...list, { emoji, count: 1, userIds: [myId], names: [myName] }];
+}
 
 function merge(current: ChatMessage[], incoming: ChatMessage[]) {
   if (!incoming.length) return current;
@@ -43,22 +76,56 @@ export default function Conversation() {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [reactions, setReactions] = useState<Reactions>({});
+  const [picker, setPicker] = useState<ChatMessage | null>(null);
   const cursor = useRef<string | null>(null);
+  const received = useRef<number | null>(null);
+  const mineIds = useRef(new Set<string>());
+  const pendingReaction = useRef(0);
 
   const load = useCallback(async () => {
     try {
       const after = cursor.current ? `?after=${encodeURIComponent(cursor.current)}` : '';
       const data = await api<Reply>(`/api/mobile/documents/${id}/messages${after}`);
       if (data.title) setTitle(data.title);
+      for (const message of data.messages) if (message.authorId === myId) mineIds.current.add(message.id);
       setMessages((current) => merge(current ?? [], data.messages));
       setCall(data.call);
+      // A poll that raced an optimistic toggle would briefly undo it; the next one catches up.
+      if (data.reactions && !pendingReaction.current) {
+        const total = receivedCount(data.reactions, mineIds.current, myId);
+        if (received.current !== null && total > received.current) playChime();
+        received.current = total;
+        setReactions(data.reactions);
+      }
       const last = data.messages[data.messages.length - 1];
       if (last) cursor.current = last.createdAt;
       setError('');
     } catch (reason) {
       setError(errorMessage(reason));
     }
-  }, [id]);
+  }, [id, myId]);
+
+  async function react(message: ChatMessage, emoji: string) {
+    setPicker(null);
+    const before = reactions[message.id] ?? [];
+    const adding = !before.find((item) => item.emoji === emoji)?.userIds.includes(myId);
+    if (adding) playChime();
+    setReactions((current) => ({ ...current, [message.id]: toggleLocal(current[message.id] ?? [], emoji, myId, me?.user.name ?? 'Vous') }));
+    pendingReaction.current += 1;
+    try {
+      const result = await api<{ reactions: ReactionSummary[] }>(`/api/mobile/documents/${id}/messages/${message.id}/reactions`, {
+        method: 'POST',
+        body: { emoji },
+      });
+      setReactions((current) => ({ ...current, [message.id]: result.reactions }));
+    } catch (reason) {
+      setReactions((current) => ({ ...current, [message.id]: before }));
+      setError(errorMessage(reason));
+    } finally {
+      pendingReaction.current -= 1;
+    }
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -76,6 +143,7 @@ export default function Conversation() {
     setSending(true);
     try {
       const data = await api<{ message: ChatMessage }>(`/api/mobile/documents/${id}/messages`, { method: 'POST', body: { body } });
+      mineIds.current.add(data.message.id);
       setMessages((current) => merge(current ?? [], [data.message]));
       setDraft('');
       setError('');
@@ -149,16 +217,38 @@ export default function Conversation() {
               const mine = item.authorId === myId;
               const older = rows[index + 1];
               const firstOfGroup = !older || older.authorId !== item.authorId || older.kind === 'CALL';
+              const list = reactions[item.id] ?? [];
               return (
-                <View style={[styles.row, mine ? styles.rowMine : null, firstOfGroup && { marginTop: space.sm }]}>
+                <View style={[styles.row, mine ? styles.rowMine : null, firstOfGroup && { marginTop: space.sm }, list.length ? { marginBottom: 14 } : null]}>
                   {!mine ? (
                     <View style={styles.avatarSlot}>{firstOfGroup ? <Avatar name={item.authorName} url={item.authorAvatar} size={30} /> : null}</View>
                   ) : null}
-                  <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleOther]}>
+                  <Pressable
+                    onLongPress={() => setPicker(item)}
+                    delayLongPress={280}
+                    accessibilityHint="Appui long pour réagir"
+                    style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleOther]}>
                     {!mine && firstOfGroup ? <Text style={styles.author}>{item.authorName}</Text> : null}
                     <Text style={[styles.body, mine && { color: '#fff' }]}>{item.body}</Text>
                     <Text style={[styles.time, mine && { color: 'rgba(255,255,255,0.75)' }]}>{formatTime(item.createdAt)}</Text>
-                  </View>
+                    {list.length ? (
+                      <View style={[styles.chips, mine ? { right: 6 } : { left: 6 }]}>
+                        {list.map((entry) => {
+                          const selected = entry.userIds.includes(myId);
+                          return (
+                            <Pressable
+                              key={entry.emoji}
+                              accessibilityLabel={`${entry.emoji} ${entry.names.join(', ')}`}
+                              onPress={() => void react(item, entry.emoji)}
+                              style={[styles.chip, selected && styles.chipMine]}>
+                              <Text style={styles.chipEmoji}>{entry.emoji}</Text>
+                              {entry.count > 1 ? <Text style={[styles.chipCount, selected && { color: colors.brand }]}>{entry.count}</Text> : null}
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    ) : null}
+                  </Pressable>
                 </View>
               );
             }}
@@ -190,6 +280,30 @@ export default function Conversation() {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      <Modal visible={Boolean(picker)} transparent animationType="fade" onRequestClose={() => setPicker(null)}>
+        <Pressable style={styles.pickerBackdrop} onPress={() => setPicker(null)}>
+          <View style={styles.pickerCard}>
+            <Text style={styles.pickerPreview} numberOfLines={3}>
+              {picker?.authorId === myId ? 'Vous' : picker?.authorName} : {picker?.body}
+            </Text>
+            <View style={styles.pickerRow}>
+              {REACTIONS.map((emoji) => {
+                const selected = Boolean(picker && reactions[picker.id]?.find((item) => item.emoji === emoji)?.userIds.includes(myId));
+                return (
+                  <Pressable
+                    key={emoji}
+                    accessibilityLabel={`Réagir ${emoji}`}
+                    onPress={() => picker && void react(picker, emoji)}
+                    style={({ pressed }) => [styles.pickerEmoji, selected && styles.pickerEmojiSelected, pressed && { transform: [{ scale: 1.2 }] }]}>
+                    <Text style={{ fontSize: 30 }}>{emoji}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -235,6 +349,27 @@ const styles = StyleSheet.create({
   author: { fontSize: 12, fontWeight: '700', color: colors.brand },
   body: { fontSize: 15, color: colors.text, lineHeight: 21 },
   time: { fontSize: 11, color: colors.faint, alignSelf: 'flex-end' },
+  chips: { position: 'absolute', bottom: -16, flexDirection: 'row', gap: 4 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: colors.card,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  chipMine: { backgroundColor: colors.brandSoft, borderColor: colors.brand },
+  chipEmoji: { fontSize: 13 },
+  chipCount: { fontSize: 11, fontWeight: '700', color: colors.muted },
+  pickerBackdrop: { flex: 1, backgroundColor: 'rgba(11,31,58,0.35)', justifyContent: 'center', padding: space.xl },
+  pickerCard: { backgroundColor: colors.card, borderRadius: radius.lg, padding: space.lg, gap: space.md },
+  pickerPreview: { fontSize: 14, color: colors.muted, lineHeight: 20 },
+  pickerRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  pickerEmoji: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
+  pickerEmojiSelected: { backgroundColor: colors.brandSoft },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',

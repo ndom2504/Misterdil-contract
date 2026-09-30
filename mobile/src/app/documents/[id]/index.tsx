@@ -3,13 +3,16 @@ import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'exp
 import { useCallback, useLayoutEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 
+import { ColorDot, ColorPickerSheet } from '@/components/color-picker';
 import { FileRow } from '@/components/file-row';
 import { buildPeople, PresenceBubbles } from '@/components/presence-bubbles';
 import { SignaturePanel } from '@/components/signature-panel';
+import { AvatarStack, SocialCounts } from '@/components/social';
 import { Button, Card, Loading, Message, ProgressBar, SectionTitle, StatusBadge } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { ententePdf, openRemoteFile, pickAndUpload } from '@/lib/files';
 import { formatRelative, partyLabel, roleLabel } from '@/lib/format';
+import { paletteColor } from '@/lib/palette';
 import { colors, radius, space } from '@/lib/theme';
 import type { DocumentView, InvitationLink, ShareResult, SyncSection } from '@/lib/types';
 import { useDocumentSync } from '@/lib/use-document-sync';
@@ -29,6 +32,7 @@ export default function DocumentScreen() {
   const [outcome, setOutcome] = useState<{ shared: ShareResult[]; links: InvitationLink[] } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [fileBusy, setFileBusy] = useState('');
+  const [picking, setPicking] = useState<'entente' | string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -51,9 +55,14 @@ export default function DocumentScreen() {
     navigation.setOptions({
       title: view.title,
       headerRight: () => (
-        <Pressable accessibilityLabel="Discussion de l'entente" hitSlop={12} onPress={() => router.push(`/conversation/${id}`)}>
-          <Ionicons name="chatbubbles-outline" size={24} color={colors.brand} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable accessibilityLabel="Assistant Misterdil" hitSlop={10} onPress={() => router.push(`/assistant/${id}`)}>
+            <Ionicons name="sparkles-outline" size={23} color={colors.brand} />
+          </Pressable>
+          <Pressable accessibilityLabel="Discussion de l'entente" hitSlop={10} onPress={() => router.push(`/conversation/${id}`)}>
+            <Ionicons name="chatbubbles-outline" size={24} color={colors.brand} />
+          </Pressable>
+        </View>
       ),
     });
   }, [navigation, view, id]);
@@ -81,6 +90,7 @@ export default function DocumentScreen() {
       ? { ...section, ...fresh, updatedByName: fresh.updatedByName || section.updatedByName }
       : section;
   });
+  const tint = paletteColor(view.color);
   const people = buildPeople(view, presence);
   const recipients = view.stakeholders.filter((party) => party.userId !== view.currentUserId && !party.isCurrentUser);
   const reachable = recipients.filter((party) => party.userId || party.email);
@@ -102,6 +112,27 @@ export default function DocumentScreen() {
       setError(errorMessage(reason));
     } finally {
       setFileBusy('');
+    }
+  }
+
+  async function applyColor(color: string) {
+    const target = picking;
+    setPicking(null);
+    if (!target || !view) return;
+    const previous = view;
+    setView({
+      ...view,
+      ...(target === 'entente' ? { color } : {}),
+      sections: view.sections.map((item) => (item.id === target ? { ...item, color } : item)),
+    });
+    try {
+      await api(
+        target === 'entente' ? `/api/mobile/documents/${id}/color` : `/api/mobile/documents/${id}/sections/${target}/color`,
+        { method: 'PUT', body: { color } },
+      );
+    } catch (reason) {
+      setView(previous);
+      setError(errorMessage(reason));
     }
   }
 
@@ -133,13 +164,28 @@ export default function DocumentScreen() {
           }}
         />
       }>
-      <View style={{ gap: space.sm }}>
-        <Text style={styles.meta}>
-          {view.typeLabel} · {view.workspaceName}
-        </Text>
-        <View style={styles.headRow}>
-          <PresenceBubbles people={people} />
-          <StatusBadge status={view.status} kind="document" />
+      <View style={[styles.hero, tint && { backgroundColor: tint.soft, borderColor: tint.soft }]}>
+        <View style={[styles.heroStripe, { backgroundColor: tint?.hex ?? colors.brand }]} />
+        <View style={styles.heroBody}>
+          <View style={styles.headRow}>
+            <Text style={[styles.meta, { flex: 1 }]} numberOfLines={1}>
+              {view.typeLabel} · {view.workspaceName}
+            </Text>
+            {view.access.canWrite ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Couleur de l'entente"
+                onPress={() => setPicking('entente')}
+                style={({ pressed }) => [styles.colorChip, pressed && { opacity: 0.8 }]}>
+                <ColorDot value={view.color} />
+                <Text style={styles.colorChipText}>{tint ? tint.label : 'Couleur'}</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <View style={styles.headRow}>
+            <PresenceBubbles people={people} />
+            <StatusBadge status={view.status} kind="document" />
+          </View>
         </View>
       </View>
 
@@ -187,7 +233,7 @@ export default function DocumentScreen() {
           </Text>
           <Text style={styles.percent}>{view.progress.percent} %</Text>
         </View>
-        <ProgressBar percent={view.progress.percent} />
+        <ProgressBar percent={view.progress.percent} color={tint?.hex} />
       </Card>
 
       {view.sentAt ? <SignaturePanel view={view} onChanged={load} /> : null}
@@ -209,36 +255,63 @@ export default function DocumentScreen() {
 
       {tab === 'sections' ? (
         <View style={{ gap: space.sm }}>
+          {view.access.canWrite ? <Text style={styles.tip}>Appui long sur une section pour lui attribuer une couleur.</Text> : null}
           {sections.map((section) => {
             const writer = writers.get(section.id);
+            const sectionTint = paletteColor(section.color);
+            const social = section.social;
             return (
               <Pressable
                 key={section.id}
                 onPress={() => router.push(`/documents/${id}/${section.id}`)}
-                style={({ pressed }) => [styles.section, pressed && { opacity: 0.85 }]}>
-                <View style={styles.sectionHead}>
-                  <Text style={styles.sectionTitle}>
-                    {section.position}. {section.title}
+                onLongPress={view.access.canWrite ? () => setPicking(section.id) : undefined}
+                delayLongPress={350}
+                style={({ pressed }) => [styles.section, sectionTint && { borderColor: sectionTint.soft }, pressed && { opacity: 0.88 }]}>
+                <View style={[styles.sectionStripe, { backgroundColor: sectionTint?.hex ?? colors.border }]} />
+                <View style={styles.sectionBody}>
+                  <View style={styles.sectionHead}>
+                    <View style={[styles.sectionNumber, { backgroundColor: sectionTint?.soft ?? colors.background }]}>
+                      <Text style={[styles.sectionNumberText, { color: sectionTint?.hex ?? colors.muted }]}>{section.position}</Text>
+                    </View>
+                    <Text style={styles.sectionTitle}>{section.title}</Text>
+                    <StatusBadge status={section.status} />
+                  </View>
+                  <Text style={[styles.preview, !section.content.trim() && styles.previewEmpty]} numberOfLines={3}>
+                    {section.content.trim() || 'Section vide. Touchez pour commencer la rédaction.'}
                   </Text>
-                  <StatusBadge status={section.status} />
+                  {writer ? (
+                    <Text style={styles.writer}>
+                      <Ionicons name="create-outline" size={13} color={colors.success} /> {writer} modifie cette section
+                    </Text>
+                  ) : section.updatedByName && section.content.trim() ? (
+                    <Text style={styles.meta}>
+                      Modifié par {section.updatedByName} {formatRelative(section.updatedAt)}
+                    </Text>
+                  ) : null}
+                  {social ? (
+                    <View style={styles.sectionFoot}>
+                      <AvatarStack people={social.people} size={22} />
+                      <SocialCounts social={social} />
+                    </View>
+                  ) : null}
                 </View>
-                <Text style={[styles.preview, !section.content.trim() && styles.previewEmpty]} numberOfLines={3}>
-                  {section.content.trim() || 'Section vide. Touchez pour commencer la rédaction.'}
-                </Text>
-                {writer ? (
-                  <Text style={styles.writer}>
-                    <Ionicons name="create-outline" size={13} color={colors.success} /> {writer} modifie cette section
-                  </Text>
-                ) : section.updatedByName && section.content.trim() ? (
-                  <Text style={styles.meta}>
-                    Modifié par {section.updatedByName} {formatRelative(section.updatedAt)}
-                  </Text>
-                ) : null}
               </Pressable>
             );
           })}
         </View>
       ) : null}
+
+      <ColorPickerSheet
+        visible={Boolean(picking)}
+        title={
+          picking === 'entente'
+            ? "Couleur de l'entente"
+            : `Couleur de « ${sections.find((item) => item.id === picking)?.title ?? 'la section'} »`
+        }
+        value={(picking === 'entente' ? view.color : sections.find((item) => item.id === picking)?.color) ?? ''}
+        onClose={() => setPicking(null)}
+        onPick={(color) => void applyColor(color)}
+      />
 
       {tab === 'participants' ? (
         <View style={{ gap: space.sm }}>
@@ -365,7 +438,31 @@ function SendResults({ shared, links, onClose }: { shared: ShareResult[]; links:
 const styles = StyleSheet.create({
   content: { padding: space.lg, gap: space.lg },
   meta: { fontSize: 13, color: colors.muted, lineHeight: 18 },
-  headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: space.lg },
+  hero: {
+    flexDirection: 'row',
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  heroStripe: { width: 5 },
+  heroBody: { flex: 1, padding: space.md, gap: space.sm },
+  colorChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.card,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  colorChipText: { fontSize: 12, fontWeight: '600', color: colors.text },
+  tip: { fontSize: 12, color: colors.faint },
   cardTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
   steps: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   step: {
@@ -400,15 +497,29 @@ const styles = StyleSheet.create({
   tabLabel: { fontSize: 13, color: colors.muted, fontWeight: '600' },
   tabLabelActive: { color: colors.text },
   section: {
+    flexDirection: 'row',
     backgroundColor: colors.card,
     borderRadius: radius.md,
-    padding: space.lg,
-    gap: 6,
-    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    borderWidth: 1,
     borderColor: colors.border,
   },
-  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', gap: space.sm, alignItems: 'flex-start' },
+  sectionStripe: { width: 4 },
+  sectionBody: { flex: 1, padding: space.md, paddingLeft: space.md + 2, gap: 6 },
+  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', gap: space.sm, alignItems: 'center' },
+  sectionNumber: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  sectionNumberText: { fontSize: 13, fontWeight: '800' },
   sectionTitle: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.text },
+  sectionFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+    paddingTop: space.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    minHeight: 30,
+  },
   preview: { fontSize: 14, color: colors.text, lineHeight: 20 },
   previewEmpty: { color: colors.faint, fontStyle: 'italic' },
   writer: { fontSize: 13, color: colors.success, fontWeight: '600' },

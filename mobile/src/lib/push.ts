@@ -7,11 +7,15 @@ import { api } from '@/lib/api';
 
 let registered: string | null = null;
 
+export const CHIME_CHANNEL = 'misterdil';
+
+// In the foreground the app shows its own pop-up and plays the chime (see ToastHost),
+// so the system banner and sound are skipped to avoid a double alert.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldPlaySound: true,
+    shouldPlaySound: false,
     shouldSetBadge: true,
-    shouldShowBanner: true,
+    shouldShowBanner: false,
     shouldShowList: true,
   }),
 });
@@ -28,6 +32,13 @@ export async function registerPushToken() {
       name: 'Misterdil',
       importance: Notifications.AndroidImportance.HIGH,
     });
+    await Notifications.setNotificationChannelAsync(CHIME_CHANNEL, {
+      name: 'Réactions et messages',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: 'misterdil_pop.wav',
+      vibrationPattern: [0, 120, 80, 120],
+      lightColor: '#0B51CD',
+    });
   }
   const current = await Notifications.getPermissionsAsync();
   const status = current.status === 'granted' ? current.status : (await Notifications.requestPermissionsAsync()).status;
@@ -35,7 +46,8 @@ export async function registerPushToken() {
 
   const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
   if (token === registered) return;
-  await api('/api/mobile/push', { method: 'POST', body: { token, platform: Platform.OS } });
+  // `chime` tells the server this build ships the custom sound and the Android channel.
+  await api('/api/mobile/push', { method: 'POST', body: { token, platform: Platform.OS, chime: true } });
   registered = token;
 }
 

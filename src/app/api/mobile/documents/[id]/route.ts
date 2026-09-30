@@ -14,6 +14,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       title: view.title,
       typeLabel: view.typeLabel,
       status: view.status,
+      color: view.color,
       workspaceId: view.workspaceId,
       workspaceName: view.workspaceName,
       moderatorId: view.moderatorId,

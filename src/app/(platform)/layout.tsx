@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { NotificationToaster } from "@/components/notification-toaster";
 import { PlatformShell } from "@/components/platform-shell";
 import { requireUser } from "@/server/current-user";
 import { notificationPreview } from "@/server/queries";
@@ -17,6 +18,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
       notices={notifications.items}
     >
       {children}
+      <NotificationToaster />
     </PlatformShell>
   );
 }

@@ -53,7 +53,7 @@ export async function notifyUser(input: {
       href: input.href ?? "",
     },
   });
-  await sendPush(input.userId, { title: input.title, body: input.body ?? "", href: input.href ?? "" });
+  await sendPush(input.userId, { title: input.title, body: input.body ?? "", href: input.href ?? "", kind: input.kind });
 }
 
 export async function saveVersion(input: {

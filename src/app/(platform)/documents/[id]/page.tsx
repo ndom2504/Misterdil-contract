@@ -15,14 +15,23 @@ export default async function DocumentPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ onglet?: string; appel?: string }>;
+  searchParams: Promise<{ onglet?: string; appel?: string; section?: string }>;
 }) {
   const { id } = await params;
-  const { onglet, appel } = await searchParams;
+  const { onglet, appel, section } = await searchParams;
   const user = await requireUser();
   const view = await getDocumentView(user, id);
   if (!view) notFound();
   if (view.sections.length === 0 && view.access.canEdit) redirect(`/documents/nouveau?brouillon=${id}`);
   const history = await assistantHistory(user.id, id);
-  return <DocumentWorkspace view={view} initialTab={onglet ?? "document"} callInvite={appel === "1"} history={history} />;
+  return (
+    <DocumentWorkspace
+      key={section ?? ""}
+      view={view}
+      initialTab={onglet ?? "document"}
+      initialSection={section}
+      callInvite={appel === "1"}
+      history={history}
+    />
+  );
 }

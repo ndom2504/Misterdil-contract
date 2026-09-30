@@ -36,6 +36,17 @@ export type DocumentSummary = {
   participants: number;
   progress: Progress;
   owned: boolean;
+  color?: string;
+};
+
+export type SectionPerson = { id: string; name: string; avatarUrl: string };
+
+export type SectionSocial = {
+  likes: number;
+  liked: boolean;
+  views: number;
+  comments: number;
+  people: SectionPerson[];
 };
 
 export type Section = {
@@ -48,6 +59,8 @@ export type Section = {
   updatedAt: string;
   updatedById: string | null;
   updatedByName: string;
+  color?: string;
+  social?: SectionSocial;
 };
 
 export type Stakeholder = {
@@ -139,6 +152,10 @@ export type ChatMessage = {
   createdAt: string;
 };
 
+export type ReactionSummary = { emoji: string; count: number; userIds: string[]; names: string[] };
+
+export type AssistantMessage = { id: string; role: string; content: string; createdAt: string };
+
 export type CallStatus = {
   configured: boolean;
   active: boolean;
@@ -150,6 +167,7 @@ export type DocumentView = {
   title: string;
   typeLabel: string;
   status: string;
+  color?: string;
   workspaceId: string;
   workspaceName: string;
   moderatorId: string | null;

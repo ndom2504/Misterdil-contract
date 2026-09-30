@@ -30,7 +30,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     create: { userId: user.id, documentId: id, sectionId, lastSeenAt: now },
   });
 
-  const [presences, sections, lastActivity, comments, proposals, stakeholders] = await Promise.all([
+  const [presences, sections, lastActivity, comments, proposals, stakeholders, likes, views, colors] = await Promise.all([
     prisma.presence.findMany({
       where: { documentId: id },
       include: { user: { select: { name: true, jobTitle: true, organization: { select: { name: true } } } } },
@@ -49,6 +49,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       select: { userId: true, email: true, invitedAt: true },
       orderBy: [{ email: "asc" }, { name: "asc" }],
     }),
+    prisma.sectionLike.count({ where: { section: { documentId: id } } }),
+    prisma.sectionView.count({ where: { section: { documentId: id } } }),
+    prisma.documentSection.findMany({ where: { documentId: id }, select: { color: true }, orderBy: { position: "asc" } }),
   ]);
 
   const payload: SyncPayload = {
@@ -62,6 +65,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       comments,
       proposals,
       stakeholders.map((item) => `${item.email}:${item.userId ?? "-"}:${item.invitedAt ? 1 : 0}`).join(","),
+      likes,
+      views,
+      colors.map((item) => item.color).join(","),
     ].join("|"),
     presence: presences.map((item) => ({
       userId: item.userId,

@@ -1,13 +1,30 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AssistantPanel } from '@/components/assistant-panel';
+import { ColorDot, ColorPickerSheet } from '@/components/color-picker';
+import { AvatarStack, SocialBar } from '@/components/social';
 import { Button, Card, Loading, Message, SectionTitle, StatusBadge } from '@/components/ui';
 import { ApiError, api, errorMessage } from '@/lib/api';
+import { playChime } from '@/lib/chime';
 import { formatRelative } from '@/lib/format';
+import { paletteColor } from '@/lib/palette';
 import { colors, radius, space } from '@/lib/theme';
-import type { DocumentView, Section } from '@/lib/types';
+import type { DocumentView, Section, SectionSocial } from '@/lib/types';
 import { useDocumentSync } from '@/lib/use-document-sync';
+
+const NO_SOCIAL: SectionSocial = { likes: 0, liked: false, views: 0, comments: 0, people: [] };
+
+function reactorsLabel(social: SectionSocial) {
+  const names = social.people.map((person) => person.name.split(' ')[0]);
+  if (!names.length) return '';
+  if (names.length === 1) return `${names[0]} a réagi`;
+  if (names.length === 2) return `${names[0]} et ${names[1]} ont réagi`;
+  return `${names[0]}, ${names[1]} et ${names.length - 2} autre${names.length > 3 ? 's' : ''} ont réagi`;
+}
 
 type Conflict = { content: string; updatedAt: string; by: string };
 type SaveReply = { ok: true; updatedAt: string };
@@ -29,7 +46,12 @@ export default function SectionScreen() {
   const [remote, setRemote] = useState('');
   const [comment, setComment] = useState('');
   const [posting, setPosting] = useState(false);
+  const [liking, setLiking] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
+  const scrollRef = useRef<ScrollView>(null);
+  const commentRef = useRef<TextInput>(null);
   const baseRef = useRef('');
   const draftRef = useRef('');
   const dirtyRef = useRef(false);
@@ -55,6 +77,14 @@ export default function SectionScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    api<{ views: number }>(`/api/mobile/documents/${id}/sections/${sectionId}/view`, { method: 'POST' })
+      .then((result) =>
+        setSection((current) => (current ? { ...current, social: { ...(current.social ?? NO_SOCIAL), views: result.views } } : current)),
+      )
+      .catch(() => {});
+  }, [id, sectionId]);
 
   const save = useCallback(
     async (log: boolean) => {
@@ -136,6 +166,51 @@ export default function SectionScreen() {
     });
   }, [navigation, section, canWrite, finish]);
 
+  async function toggleLike() {
+    if (!section || liking) return;
+    const before = section.social ?? NO_SOCIAL;
+    const liked = !before.liked;
+    if (liked) playChime();
+    setLiking(true);
+    setSection({ ...section, social: { ...before, liked, likes: Math.max(0, before.likes + (liked ? 1 : -1)) } });
+    try {
+      const result = await api<{ liked: boolean; likes: number }>(`/api/mobile/documents/${id}/sections/${section.id}/like`, { method: 'POST' });
+      setSection((current) =>
+        current ? { ...current, social: { ...(current.social ?? NO_SOCIAL), liked: result.liked, likes: result.likes } } : current,
+      );
+      void load();
+    } catch (reason) {
+      setSection((current) => (current ? { ...current, social: before } : current));
+      setError(errorMessage(reason));
+    } finally {
+      setLiking(false);
+    }
+  }
+
+  async function applyColor(color: string) {
+    setPicking(false);
+    if (!section) return;
+    const previous = section.color ?? '';
+    setSection({ ...section, color });
+    try {
+      await api(`/api/mobile/documents/${id}/sections/${section.id}/color`, { method: 'PUT', body: { color } });
+    } catch (reason) {
+      setSection((current) => (current ? { ...current, color: previous } : current));
+      setError(errorMessage(reason));
+    }
+  }
+
+  function insertFromAssistant(text: string) {
+    const current = draftRef.current.trimEnd();
+    setDraft(current ? `${current}\n\n${text.trim()}` : text.trim());
+    setDirty(true);
+  }
+
+  function focusComment() {
+    scrollRef.current?.scrollToEnd({ animated: true });
+    setTimeout(() => commentRef.current?.focus(), 250);
+  }
+
   async function postComment() {
     setPosting(true);
     try {
@@ -152,16 +227,52 @@ export default function SectionScreen() {
   if (!view || !section) return error ? <View style={{ padding: space.lg }}><Message text={error} /></View> : <Loading />;
 
   const discussions = view.discussions.filter((item) => item.sectionId === section.id);
+  const social = section.social ?? NO_SOCIAL;
+  const tint = paletteColor(section.color);
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.head}>
-          <StatusBadge status={section.status} />
-          <Text style={[styles.meta, styles.status]}>
-            {saving ? 'Enregistrement…' : savedLabel || (section.updatedByName ? `Modifié par ${section.updatedByName} ${formatRelative(section.updatedAt)}` : '')}
-          </Text>
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <View style={[styles.banner, { backgroundColor: tint?.soft ?? colors.card, borderColor: tint?.soft ?? colors.border }]}>
+          <View style={[styles.bannerStripe, { backgroundColor: tint?.hex ?? colors.brand }]} />
+          <View style={styles.bannerBody}>
+            <View style={styles.head}>
+              <StatusBadge status={section.status} />
+              <Text style={[styles.meta, styles.status]}>
+                {saving ? 'Enregistrement…' : savedLabel || (section.updatedByName ? `Modifié par ${section.updatedByName} ${formatRelative(section.updatedAt)}` : '')}
+              </Text>
+            </View>
+            <View style={styles.head}>
+              {social.people.length ? (
+                <View style={styles.reactors}>
+                  <AvatarStack people={social.people} size={26} />
+                  <Text style={styles.reactorsText} numberOfLines={1}>
+                    {reactorsLabel(social)}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={[styles.meta, { flex: 1 }]}>Soyez le premier à réagir.</Text>
+              )}
+              <View style={styles.tools}>
+                {view.access.canWrite ? (
+                  <Pressable accessibilityLabel="Couleur de la section" onPress={() => setPicking(true)} style={styles.toolButton} hitSlop={6}>
+                    <ColorDot value={section.color} size={14} />
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Assistant Misterdil"
+                  onPress={() => setAssistantOpen(true)}
+                  style={({ pressed }) => [styles.assistantButton, pressed && { opacity: 0.85 }]}>
+                  <Ionicons name="sparkles" size={15} color="#fff" />
+                  <Text style={styles.assistantButtonText}>Assistant</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
         </View>
+
+        <SocialBar social={social} busy={liking} onLike={() => void toggleLike()} onComment={focusComment} />
 
         {lockedBy && !dirty ? <Message tone="warning" text={`${lockedBy} modifie cette section. Elle est en lecture seule le temps qu'il ou elle termine.`} /> : null}
         {!view.access.canWrite ? <Message tone="info" text="Votre accès à ce document est en lecture seule." /> : null}
@@ -238,6 +349,7 @@ export default function SectionScreen() {
           {view.access.canComment ? (
             <View style={styles.commentForm}>
               <TextInput
+                ref={commentRef}
                 value={comment}
                 onChangeText={setComment}
                 placeholder="Ajouter un commentaire"
@@ -250,6 +362,37 @@ export default function SectionScreen() {
           ) : null}
         </View>
       </ScrollView>
+
+      <ColorPickerSheet
+        visible={picking}
+        title={`Couleur de « ${section.title} »`}
+        value={section.color ?? ''}
+        onClose={() => setPicking(false)}
+        onPick={(color) => void applyColor(color)}
+      />
+
+      <Modal
+        visible={assistantOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setAssistantOpen(false)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
+          <View style={styles.modalHead}>
+            <Text style={styles.modalTitle}>Assistant Misterdil</Text>
+            <Pressable onPress={() => setAssistantOpen(false)} hitSlop={12}>
+              <Text style={styles.modalClose}>Fermer</Text>
+            </Pressable>
+          </View>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+            <AssistantPanel
+              documentId={id}
+              sectionId={section.id}
+              sectionTitle={section.title}
+              onInsert={canWrite ? insertFromAssistant : undefined}
+            />
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -257,6 +400,44 @@ export default function SectionScreen() {
 const styles = StyleSheet.create({
   content: { padding: space.lg, gap: space.md, paddingBottom: space.xl * 2 },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm },
+  banner: { flexDirection: 'row', borderRadius: radius.md, borderWidth: 1, overflow: 'hidden' },
+  bannerStripe: { width: 5 },
+  bannerBody: { flex: 1, padding: space.md, gap: space.sm },
+  reactors: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  reactorsText: { flex: 1, fontSize: 13, color: colors.text, fontWeight: '600' },
+  tools: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  toolButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  assistantButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.brand,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  assistantButtonText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  modalHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  modalTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
+  modalClose: { fontSize: 16, fontWeight: '600', color: colors.brand },
   meta: { fontSize: 13, color: colors.muted },
   status: { flexShrink: 1, textAlign: 'right' },
   editor: {

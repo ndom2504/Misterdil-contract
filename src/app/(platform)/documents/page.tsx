@@ -4,6 +4,7 @@ import { Clock, Eye, FileText, Filter, MessageSquare, PenLine, Plus, Sparkles } 
 import { ProgressBar } from "@/components/progress-bar";
 import { StatusBadge } from "@/components/status-badge";
 import { formatRelative } from "@/lib/format";
+import { paletteColor } from "@/lib/palette";
 import { requireUser } from "@/server/current-user";
 import { getDashboard, listDocuments, listWorkspaces, type DocumentSummary } from "@/server/queries";
 
@@ -149,9 +150,13 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
                 <tbody>
                   {visible.map((document) => (
                     <tr key={document.id} className="border-t border-[#f2f5f9]">
-                      <td className="px-5 py-4">
+                      <td className="relative px-5 py-4">
+                        <span className="absolute inset-y-3 left-0 w-1 rounded-r-full" style={{ backgroundColor: paletteColor(document.color)?.hex ?? "transparent" }} />
                         <Link href={documentHref(document)} className="flex items-start gap-3">
-                          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#e8f0ff] text-[#2f6fed]">
+                          <span
+                            className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#e8f0ff] text-[#2f6fed]"
+                            style={paletteColor(document.color) ? { backgroundColor: paletteColor(document.color)?.soft, color: paletteColor(document.color)?.hex } : undefined}
+                          >
                             <FileText className="h-4 w-4" />
                           </span>
                           <span>
@@ -267,7 +272,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
             {documents.slice(0, 5).map((document) => (
               <li key={document.id}>
                 <Link href={documentHref(document)} className="flex items-start gap-2 text-sm">
-                  <FileText className="mt-0.5 h-4 w-4 shrink-0 text-[#2f6fed]" />
+                  <FileText className="mt-0.5 h-4 w-4 shrink-0 text-[#2f6fed]" style={paletteColor(document.color) ? { color: paletteColor(document.color)?.hex } : undefined} />
                   <span>
                     <span className="block font-medium text-[#10233f]">{document.title}</span>
                     <span className="block text-xs text-[#8b939e]">{formatRelative(document.updatedAt)}</span>
