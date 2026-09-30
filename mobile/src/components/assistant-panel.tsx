@@ -156,7 +156,12 @@ export function AssistantPanel({ documentId, sectionId, sectionTitle, onInsert }
 
       <Message text={error} />
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.prompts} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.promptRow}
+        contentContainerStyle={styles.prompts}
+        keyboardShouldPersistTaps="handled">
         {prompts.map((prompt) => (
           <Pressable key={prompt} disabled={busy} onPress={() => void ask(prompt)} style={({ pressed }) => [styles.prompt, pressed && { opacity: 0.8 }]}>
             <Text style={styles.promptText}>{prompt}</Text>
@@ -228,7 +233,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   insertText: { fontSize: 13, fontWeight: '600', color: colors.brand },
-  prompts: { paddingHorizontal: space.lg, gap: space.sm },
+  // A ScrollView grows by default; in this column it would take half of the screen.
+  promptRow: { flexGrow: 0, flexShrink: 0 },
+  prompts: { paddingHorizontal: space.lg, gap: space.sm, alignItems: 'center' },
   prompt: {
     borderRadius: radius.pill,
     borderWidth: 1,
