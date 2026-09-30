@@ -32,6 +32,31 @@ export function deleteDocumentAction(document: { id: string; title: string }, on
   };
 }
 
+export function deleteWorkspaceAction(workspace: { id: string; name: string; documents: number }, onDeleted: () => void): SheetAction {
+  const scope = workspace.documents
+    ? `Ses ${workspace.documents} entente${workspace.documents > 1 ? 's' : ''}, leurs discussions et tous les fichiers seront supprimés pour toutes les parties.`
+    : 'Ses fichiers et ses invitations seront supprimés.';
+  return {
+    label: "Supprimer l'espace",
+    hint: 'Toutes ses ententes, discussions et fichiers',
+    icon: 'trash-outline',
+    destructive: true,
+    onPress: () =>
+      Alert.alert("Supprimer l'espace", `« ${workspace.name} » sera supprimé. ${scope} Cette action est définitive.`, [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: () => {
+            api(`/api/mobile/workspaces/${workspace.id}`, { method: 'DELETE' })
+              .then(onDeleted)
+              .catch((reason) => Alert.alert("Supprimer l'espace", errorMessage(reason)));
+          },
+        },
+      ]),
+  };
+}
+
 function confirmClear(documentId: string, scope: 'me' | 'all', onCleared: () => void) {
   const forAll = scope === 'all';
   Alert.alert(

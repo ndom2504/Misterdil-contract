@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ProgressBar } from "@/components/progress-bar";
 import { StatusBadge } from "@/components/status-badge";
 import { Card } from "@/components/ui";
-import { UploadForm } from "@/components/workspace-tools";
+import { UploadForm, WorkspaceSettings } from "@/components/workspace-tools";
 import { fileSize } from "@/lib/format";
 import { roleLabel } from "@/lib/domain";
 import { requireUser } from "@/server/current-user";
@@ -17,10 +17,13 @@ export default async function WorkspacePage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
-      <div>
-        <p className="text-sm text-[#5e6875]">{workspace.organization}</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{workspace.name}</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-[#5e6875]">{workspace.description}</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-sm text-[#5e6875]">{workspace.organization}</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">{workspace.name}</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#5e6875]">{workspace.description}</p>
+        </div>
+        <WorkspaceSettings workspace={{ id: workspace.id, name: workspace.name, documents: workspace.documents.length, canDelete: workspace.canDelete }} />
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <Card className="p-4"><p className="text-sm text-[#5e6875]">Participants</p><p className="mt-1 text-2xl font-semibold">{workspace.members.length}</p></Card>

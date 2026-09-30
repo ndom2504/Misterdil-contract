@@ -83,6 +83,7 @@ export function appRoute(href: string) {
   }
   if (href.startsWith('/signatures')) return '/';
   if (href.startsWith('/discussions')) return '/discussions';
+  if (href.startsWith('/espaces')) return '/espaces';
   return '/';
 }
 

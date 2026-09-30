@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Settings } from "lucide-react";
+import { MenuActions } from "@/components/color-picker";
 import { SECTORS } from "@/lib/catalog";
 import { createWorkspace } from "@/server/actions/workspaces";
 import { Button, Field, controlClass } from "@/components/ui";
@@ -38,6 +40,61 @@ export function WorkspaceCreator() {
       {error ? <p className="text-sm text-[#9f2d2d] sm:col-span-2">{error}</p> : null}
       <Button disabled={pending}>{pending ? "Création..." : "Créer l'espace"}</Button>
     </form>
+  );
+}
+
+export function WorkspaceSettings({ workspace }: { workspace: { id: string; name: string; documents: number; canDelete: boolean } }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState("");
+  const [pending, startTransition] = useTransition();
+
+  function remove() {
+    const scope = workspace.documents
+      ? `Ses ${workspace.documents} entente${workspace.documents > 1 ? "s" : ""}, leurs discussions et tous les fichiers seront effacés pour toutes les parties.`
+      : "Ses fichiers et ses invitations seront effacés.";
+    if (!window.confirm(`Supprimer définitivement l'espace « ${workspace.name} » ?\n\n${scope} Cette action est irréversible.`)) return;
+    setError("");
+    startTransition(async () => {
+      const response = await fetch(`/api/workspaces/${workspace.id}`, { method: "DELETE" }).catch(() => null);
+      if (!response?.ok) {
+        const data = (await response?.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "L'espace n'a pas pu être supprimé.");
+        return;
+      }
+      router.push("/espaces");
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        aria-expanded={open}
+        disabled={pending}
+        onClick={() => setOpen((value) => !value)}
+        className="inline-flex h-10 items-center gap-2 rounded-full border border-[#e6eef8] bg-white px-3 text-sm text-[#243040] hover:bg-[#f5f7fb] disabled:opacity-60">
+        <Settings className="h-4 w-4" />
+        {pending ? "Suppression…" : "Réglages de l'espace"}
+      </button>
+      {open ? (
+        <>
+          <button type="button" aria-label="Fermer" className="fixed inset-0 z-20 cursor-default" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-30 mt-2 w-72 rounded-2xl border border-[#e6eef8] bg-white p-2 shadow-lg">
+            {workspace.canDelete ? (
+              <MenuActions
+                actions={[{ label: "Supprimer l'espace", hint: "Toutes ses ententes, discussions et fichiers", destructive: true, onSelect: remove }]}
+                onDone={() => setOpen(false)}
+              />
+            ) : (
+              <p className="px-2 py-1 text-xs text-[#8b939e]">Seul l&apos;administrateur ou le créateur de l&apos;espace peut le supprimer.</p>
+            )}
+          </div>
+        </>
+      ) : null}
+      {error ? <p className="absolute right-0 mt-2 w-72 text-right text-sm text-[#9f2d2d]">{error}</p> : null}
+    </div>
   );
 }
 

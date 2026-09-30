@@ -1,6 +1,6 @@
 import { fieldsFor, sectorById } from "@/lib/catalog";
 import { progressFromSections, type ProgressStats } from "@/lib/progress";
-import { resolveAccess } from "@/server/access";
+import { can, resolveAccess } from "@/server/access";
 import type { SessionUser } from "@/server/current-user";
 import { prisma } from "@/server/db";
 import { loadDocumentForUser } from "@/server/guard";
@@ -179,6 +179,7 @@ export async function listWorkspaces(user: SessionUser) {
       sector: sectorById(membership.workspace.sector ?? "")?.label ?? membership.workspace.sector ?? "",
       domain: membership.workspace.domain ?? "",
       role: membership.role,
+      canDelete: can(membership.role, "workspace.manage"),
       participants: membership.workspace.members.length,
       documents: visible.map((document) => ({
         id: document.id,
@@ -235,6 +236,7 @@ export async function getWorkspace(user: SessionUser, workspaceId: string) {
     organization: workspace.organization.name,
     role: membership.role,
     canManage: membership.role === "ADMINISTRATOR" || membership.role === "CREATOR" || membership.role === "MODERATOR",
+    canDelete: can(membership.role, "workspace.manage"),
     members: workspace.members.map((member) => ({
       id: member.user.id,
       name: member.user.name,

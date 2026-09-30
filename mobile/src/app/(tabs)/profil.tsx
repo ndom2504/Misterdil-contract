@@ -66,6 +66,7 @@ export default function Profile() {
 
       <Card style={{ padding: 0, gap: 0 }}>
         <MenuItem icon="settings-outline" label="Paramètres du profil" onPress={() => router.push('/parametres')} />
+        <MenuItem icon="folder-open-outline" label="Mes espaces" onPress={() => router.push('/espaces')} />
         <MenuItem icon="notifications-outline" label="Notifications" badge={me.unread} onPress={() => router.push('/notifications')} last />
       </Card>
 

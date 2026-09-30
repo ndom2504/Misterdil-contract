@@ -89,6 +89,7 @@ function RootNavigator() {
             <Stack.Screen name="documents/[id]/[sectionId]" options={{ title: 'Section' }} />
             <Stack.Screen name="nouveau" options={{ title: 'Nouvelle entente', presentation: 'modal' }} />
             <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
+            <Stack.Screen name="espaces" options={{ title: 'Mes espaces' }} />
             <Stack.Screen name="conversation/[id]" options={{ headerShown: false }} />
             <Stack.Screen name="appel/[id]" options={{ headerShown: false, presentation: 'fullScreenModal', gestureEnabled: false }} />
             <Stack.Screen name="parametres" options={{ title: 'Paramètres du profil' }} />

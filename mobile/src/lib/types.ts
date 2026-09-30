@@ -25,6 +25,19 @@ export type Progress = {
   percent: number;
 };
 
+export type WorkspaceSummary = {
+  id: string;
+  name: string;
+  description: string;
+  sector: string;
+  role: string;
+  participants: number;
+  documents: number;
+  progress: Progress;
+  canDelete: boolean;
+  updatedAt: string;
+};
+
 export type DocumentSummary = {
   id: string;
   title: string;
